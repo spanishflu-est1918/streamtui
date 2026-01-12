@@ -23,15 +23,18 @@ For each component: **Write tests → Make them pass → Refactor**
 
 ## Phase 2: API Clients (TDD)
 
-### 4. [ ] TMDB client tests (tests/tmdb_test.rs)
+### 4. [x] TMDB client tests (tests/tmdb_test.rs)
 - Write all tests from specs/search.md
 - Use mockito for HTTP mocking
-- Tests should fail initially
+- 13 tests: all pass
+- Tests: search parsing, year extraction, person filtering, trending, movie_detail, tv_detail with seasons, tv_season episodes, rate limit retry, 404 handling, server errors, invalid JSON, bearer token auth
 
-### 5. [ ] TMDB client implementation (src/api/tmdb.rs)
-- Implement TmdbClient
-- Make tests pass
-- Handle rate limits and errors
+### 5. [x] TMDB client implementation (src/api/tmdb.rs)
+- Implement TmdbClient with reqwest
+- search(), trending(), movie_detail(), tv_detail(), tv_season()
+- Rate limit handling with automatic 429 retry and backoff
+- Error types: NotFound, RateLimited, ServerError, InvalidResponse
+- All 13 tests pass
 
 ### 6. [x] Torrentio client tests (tests/torrentio_test.rs)
 - Write all tests from specs/addons.md
