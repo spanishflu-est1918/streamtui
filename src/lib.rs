@@ -27,3 +27,4 @@ pub use models::{
 };
 
 pub use api::{TmdbClient, TorrentioClient};
+pub use app::{App, AppState};

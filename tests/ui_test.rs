@@ -12,15 +12,12 @@
 
 use ratatui::{
     backend::TestBackend,
-    buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Widget},
+    widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use streamtui::app::{App, AppScreen};
-use streamtui::models::*;
+use streamtui::{App, AppScreen, MediaType, Quality, SearchResult};
 use streamtui::ui::theme::{color_to_rgb, contrast_ratio, meets_wcag_aa, meets_wcag_aa_large, Theme};
 
 // =============================================================================

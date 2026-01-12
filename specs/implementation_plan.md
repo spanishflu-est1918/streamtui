@@ -88,21 +88,27 @@ For each component: **Write tests → Make them pass → Refactor**
 
 ## Phase 4: TUI (TDD)
 
-### 14. [ ] UI components tests (tests/ui_test.rs)
+### 14. [x] UI components tests (tests/ui_test.rs)
 - Test layout at various terminal sizes
 - Test navigation state machine
 - Test search input handling
+- 30 tests: all pass
+- Tests: theme colors (valid RGB, WCAG contrast ratios), responsive layout (80x24, 200x50), navigation (up/down, enter, escape), search focus (/, typing, enter, escape), content card render, now playing overlay
 
 ### 15. [ ] Theme and styles (src/ui/theme.rs)
 - Cyberpunk color palette
 - Component styles
 - Visual test (screenshot comparison optional)
 
-### 16. [ ] App state (src/app.rs)
-- Define AppState enum
-- Navigation stack
-- Selection state
-- Loading states
+### 16. [x] App state (src/app.rs)
+- Define AppState enum (Home, Search, Detail, Sources, Subtitles, Playing)
+- Navigation stack with back behavior
+- Selection state per view (ListState with scroll support)
+- Loading states (Idle, Loading, Error)
+- Input mode (Normal, Editing)
+- Full keyboard event handling (up/down/enter/escape/q, vim keys j/k)
+- View-specific states (HomeState, SearchState, DetailState, SourcesState, SubtitlesState, PlayingState)
+- 18 unit tests: all pass
 
 ### 17. [ ] Search view (src/ui/search.rs)
 - Search input widget
@@ -132,11 +138,17 @@ For each component: **Write tests → Make them pass → Refactor**
 
 ## Phase 5: CLI (for Claude Code)
 
-### 22. [ ] CLI argument parsing (src/cli.rs)
+### 22. [x] CLI argument parsing (src/cli.rs)
 - Use clap for argument parsing
 - Define all subcommands from specs/cli.md
 - JSON output formatting
 - Exit codes
+- Complete Cli struct with global flags (--json, --device, --quiet, --config)
+- All subcommands: Search, Trending, Info, Streams, Subtitles, Devices, Cast, Status, Play, Pause, Stop, Seek, Volume
+- JSON output helpers (JsonOutput<T>, Output struct)
+- IMDB ID validation
+- Seek/Volume parsing (absolute, relative, timestamp)
+- 10 unit tests: all pass
 
 ### 23. [ ] CLI commands implementation
 - search, trending, info, subtitles commands
