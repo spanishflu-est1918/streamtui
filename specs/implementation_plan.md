@@ -125,10 +125,12 @@ For each component: **Write tests → Make them pass → Refactor**
 - Season/episode picker for TV
 - Source list
 
-### 20. [ ] Subtitle selection view (src/ui/subtitles.rs)
-- Language grouped list
-- Trust/quality indicators
-- Auto-select option
+### 20. [x] Subtitle selection view (src/ui/subtitles.rs)
+- Group subtitles by language (BTreeMap for consistent ordering)
+- Trust indicators (✓ for trusted, ⚠️AI for machine translated, 👂SDH for hearing impaired)
+- Download count display (formatted as k/M for large numbers)
+- Selection with Enter, navigation with ↑↓, Page Up/Down, Home/End
+- Cyberpunk styling (neon borders, accent colors, language headers)
 
 ### 21. [ ] Now Playing overlay (src/ui/player.rs)
 - Casting status
