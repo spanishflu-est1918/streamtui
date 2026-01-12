@@ -9,11 +9,13 @@
 //! - `api` - API clients (TMDB, Torrentio)
 //! - `stream` - Torrent and cast managers
 //! - `ui` - TUI components
+//! - `app` - Application state and navigation
 
 pub mod models;
 pub mod api;
 pub mod stream;
 pub mod ui;
+pub mod app;
 
 // Re-export commonly used types
 pub use models::{
