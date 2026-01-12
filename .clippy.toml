@@ -1,0 +1,22 @@
+# Clippy configuration for StreamTUI
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
+
+# Type complexity threshold  
+type-complexity-threshold = 250
+
+# Too many arguments threshold
+too-many-arguments-threshold = 7
+
+# Too many lines threshold
+too-many-lines-threshold = 100
+
+# Max struct bools
+max-struct-bools = 3
+
+# Disallowed methods (add any to block)
+# disallowed-methods = []
+
+# Allow certain patterns
+allowed-wildcard-imports = ["ratatui::prelude"]
