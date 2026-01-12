@@ -169,11 +169,17 @@ For each component: **Write tests → Make them pass → Refactor**
 
 ## Phase 6: Integration
 
-### 25. [ ] Main entry point (src/main.rs)
-- Route to TUI or CLI based on args
-- Event handling for TUI
-- State management
-- Error boundaries
+### 25. [x] Main entry point (src/main.rs)
+- Route to TUI or CLI based on args (no subcommand = TUI)
+- Initialize terminal with crossterm (raw mode, alternate screen)
+- Create App state and run main event loop
+- Handle key events, update state, render UI
+- Restore terminal on exit (always, even on error)
+- CLI mode dispatches to all command handlers
+- Full TUI rendering for all AppStates (Home, Search, Detail, Sources, Subtitles, Playing)
+- Error popup overlay
+- Status bar with mode, state, device, keybinds
+- Cyberpunk neon theme integration
 
 ### 26. [ ] End-to-end flow
 - Search → Select → Subtitles → Cast (TUI)
