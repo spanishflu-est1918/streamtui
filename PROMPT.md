@@ -44,5 +44,10 @@
 - Use webtorrent-cli for torrent streaming
 
 ## When Done
-Update implementation_plan.md marking the task complete.
-Report: What tests you wrote OR what you implemented to make tests pass.
+1. Update implementation_plan.md marking the task complete
+2. **Git commit your changes:**
+   ```bash
+   git add -A
+   git commit -m "Task N: Brief description of what was done"
+   ```
+3. Report: What tests you wrote OR what you implemented to make tests pass.
