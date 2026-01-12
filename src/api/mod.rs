@@ -6,5 +6,5 @@
 pub mod tmdb;
 pub mod torrentio;
 
-pub use tmdb::TmdbClient;
+pub use tmdb::{TmdbClient, TmdbError};
 pub use torrentio::TorrentioClient;
