@@ -2,7 +2,7 @@
 //!
 //! Tests for the OpenSubtitles API client and subtitle processing.
 //! Following specs/subtitles.md test specifications.
-//! 
+//!
 //! SUBTITLES ARE IMPORTANT! 📝🎬
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -22,16 +22,18 @@ use streamtui::stream::SubtitleClient;
 #[tokio::test]
 async fn test_search_parses_results() {
     let mut server = Server::new_async().await;
-    
+
     // Mock OpenSubtitles search response
     let mock = server
         .mock("GET", "/subtitles")
-        .match_query(Matcher::AllOf(vec![
-            Matcher::UrlEncoded("imdb_id".into(), "1877830".into()),
-        ]))
+        .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
+            "imdb_id".into(),
+            "1877830".into(),
+        )]))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "data": [
                 {
                     "id": "12345",
@@ -73,17 +75,18 @@ async fn test_search_parses_results() {
                 }
             ],
             "total_count": 2
-        }"#)
+        }"#,
+        )
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
     let results = client.search("tt1877830", None).await.unwrap();
-    
+
     mock.assert_async().await;
-    
+
     assert_eq!(results.len(), 2, "Should parse 2 subtitle results");
-    
+
     // First result - English, trusted
     assert_eq!(results[0].id, "12345");
     assert_eq!(results[0].file_id, 9999001);
@@ -93,7 +96,7 @@ async fn test_search_parses_results() {
     assert!(!results[0].hearing_impaired);
     assert!(!results[0].ai_translated);
     assert_eq!(results[0].downloads, 50000);
-    
+
     // Second result - Spanish, hearing impaired
     assert_eq!(results[1].id, "12346");
     assert_eq!(results[1].language, "es");
@@ -107,7 +110,7 @@ async fn test_search_parses_results() {
 #[tokio::test]
 async fn test_search_filters_language() {
     let mut server = Server::new_async().await;
-    
+
     // Mock - verify language parameter is sent correctly
     let mock = server
         .mock("GET", "/subtitles")
@@ -117,7 +120,8 @@ async fn test_search_filters_language() {
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "data": [
                 {
                     "id": "12345",
@@ -140,15 +144,16 @@ async fn test_search_filters_language() {
                 }
             ],
             "total_count": 1
-        }"#)
+        }"#,
+        )
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
     let results = client.search("tt1877830", Some("en")).await.unwrap();
-    
+
     mock.assert_async().await;
-    
+
     assert_eq!(results.len(), 1, "Should get only English subtitles");
     assert_eq!(results[0].language, "en");
 }
@@ -158,7 +163,7 @@ async fn test_search_filters_language() {
 #[tokio::test]
 async fn test_search_episode_subtitles() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("GET", "/subtitles")
         .match_query(Matcher::AllOf(vec![
@@ -168,7 +173,8 @@ async fn test_search_episode_subtitles() {
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "data": [
                 {
                     "id": "78901",
@@ -191,15 +197,19 @@ async fn test_search_episode_subtitles() {
                 }
             ],
             "total_count": 1
-        }"#)
+        }"#,
+        )
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
-    let results = client.search_episode("tt0903747", 1, 5, None).await.unwrap();
-    
+    let results = client
+        .search_episode("tt0903747", 1, 5, None)
+        .await
+        .unwrap();
+
     mock.assert_async().await;
-    
+
     assert_eq!(results.len(), 1);
     assert!(results[0].release.contains("S01E05"));
 }
@@ -214,32 +224,34 @@ async fn test_search_episode_subtitles() {
 #[tokio::test]
 async fn test_download_caches_file() {
     let mut server = Server::new_async().await;
-    
+
     // First call - mock download endpoint
     let download_mock = server
         .mock("POST", "/download")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "link": "https://dl.opensubtitles.org/download/xyz123/subs.srt",
             "file_name": "The.Batman.2022.srt",
             "requests": 99,
             "remaining": 98
-        }"#)
-        .expect(1)  // Should only be called ONCE (cached after)
+        }"#,
+        )
+        .expect(1) // Should only be called ONCE (cached after)
         .create_async()
         .await;
-    
+
     // Mock actual subtitle file download (the link returned above)
     let file_mock = server
         .mock("GET", "/download/xyz123/subs.srt")
         .with_status(200)
         .with_header("content-type", "text/plain")
         .with_body("1\n00:00:01,000 --> 00:00:03,000\nHello world!")
-        .expect(1)  // Only once
+        .expect(1) // Only once
         .create_async()
         .await;
-    
+
     let subtitle = SubtitleResult {
         id: "12345".to_string(),
         file_id: 9999001,
@@ -253,23 +265,23 @@ async fn test_download_caches_file() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let client = SubtitleClient::with_base_url(server.url());
-    
+
     // First download - should hit network
     let content1 = client.download(&subtitle).await;
     // This may fail if not implemented - that's TDD!
     // For now we test the contract
-    
+
     // If implementation exists, verify caching:
     // Second call should NOT hit the network (mock expects 1 call only)
     // let content2 = client.download(&subtitle).await;
-    
+
     // Verify mocks were called expected number of times
     // Note: If implementation not done, these will pass anyway
     // download_mock.assert_async().await;
     // file_mock.assert_async().await;
-    
+
     // For TDD: Test the cache path generation logic
     let cache_dir = dirs::cache_dir().unwrap_or(PathBuf::from("/tmp"));
     let expected_cache_path = cache_dir
@@ -277,7 +289,7 @@ async fn test_download_caches_file() {
         .join("subtitles")
         .join("tt1877830")
         .join("en_12345.srt");
-    
+
     // Verify path format is correct (even if file doesn't exist yet)
     assert!(expected_cache_path.to_string_lossy().contains("streamtui"));
     assert!(expected_cache_path.to_string_lossy().contains("subtitles"));
@@ -288,8 +300,11 @@ async fn test_download_caches_file() {
 fn test_get_cached_subtitle() {
     // Test cache lookup logic
     let cache_dir = PathBuf::from("/tmp/streamtui-test-cache");
-    let cached_path = cache_dir.join("subtitles").join("tt1877830").join("en_12345.srt");
-    
+    let cached_path = cache_dir
+        .join("subtitles")
+        .join("tt1877830")
+        .join("en_12345.srt");
+
     // Verify cache path structure
     assert_eq!(cached_path.extension().unwrap(), "srt");
     assert!(cached_path.to_string_lossy().contains("tt1877830"));
@@ -312,15 +327,15 @@ First subtitle line
 2
 00:02:30,100 --> 00:02:35,500
 Second subtitle line"#;
-    
+
     let webvtt = SubtitleClient::srt_to_webvtt(srt);
-    
+
     // Must start with WEBVTT header
     assert!(
         webvtt.starts_with("WEBVTT"),
         "WebVTT must start with WEBVTT header"
     );
-    
+
     // Timestamps must use dots not commas
     assert!(
         webvtt.contains("00:01:23.456"),
@@ -335,7 +350,7 @@ Second subtitle line"#;
         webvtt.contains("00:02:30.100"),
         "Second cue start should use dots"
     );
-    
+
     // Should NOT contain commas in timestamps
     assert!(
         !webvtt.contains("00:01:23,"),
@@ -359,9 +374,9 @@ I'm vengeance.
 3
 00:00:10,000 --> 00:00:15,000
 <i>Narrator: In the shadows...</i>"#;
-    
+
     let webvtt = SubtitleClient::srt_to_webvtt(srt);
-    
+
     // Dialogue must be preserved (commas in text become dots - check spec!)
     // Actually the simple replace makes "Hello, Batman!" -> "Hello. Batman!"
     // This is a known limitation to document
@@ -377,7 +392,7 @@ I'm vengeance.
         webvtt.contains("Narrator"),
         "Third dialogue should be preserved"
     );
-    
+
     // Line breaks should be preserved
     let lines: Vec<&str> = webvtt.lines().collect();
     assert!(lines.len() > 10, "Should preserve line structure");
@@ -391,9 +406,9 @@ fn test_srt_to_webvtt_multiline() {
 Line one
 Line two
 Line three"#;
-    
+
     let webvtt = SubtitleClient::srt_to_webvtt(srt);
-    
+
     assert!(webvtt.contains("Line one"));
     assert!(webvtt.contains("Line two"));
     assert!(webvtt.contains("Line three"));
@@ -404,7 +419,7 @@ Line three"#;
 fn test_srt_to_webvtt_empty() {
     let srt = "";
     let webvtt = SubtitleClient::srt_to_webvtt(srt);
-    
+
     assert!(
         webvtt.starts_with("WEBVTT"),
         "Empty SRT should still produce WEBVTT header"
@@ -423,12 +438,11 @@ fn test_subtitle_url_generation() {
     let lan_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
     let port = 8889u16;
     let language = "en";
-    
+
     let url = SubtitleFile::generate_url(lan_ip, port, language);
-    
+
     assert_eq!(
-        url,
-        "http://192.168.1.100:8889/subtitles/en.vtt",
+        url, "http://192.168.1.100:8889/subtitles/en.vtt",
         "URL format must match expected pattern"
     );
 }
@@ -438,11 +452,11 @@ fn test_subtitle_url_generation() {
 fn test_subtitle_url_different_languages() {
     let lan_ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 50));
     let port = 9000u16;
-    
+
     let url_es = SubtitleFile::generate_url(lan_ip, port, "es");
     let url_fr = SubtitleFile::generate_url(lan_ip, port, "fr");
     let url_de = SubtitleFile::generate_url(lan_ip, port, "de");
-    
+
     assert_eq!(url_es, "http://10.0.0.50:9000/subtitles/es.vtt");
     assert_eq!(url_fr, "http://10.0.0.50:9000/subtitles/fr.vtt");
     assert_eq!(url_de, "http://10.0.0.50:9000/subtitles/de.vtt");
@@ -453,9 +467,9 @@ fn test_subtitle_url_different_languages() {
 fn test_subtitle_url_ipv6() {
     let lan_ip: IpAddr = "::1".parse().unwrap();
     let port = 8889u16;
-    
+
     let url = SubtitleFile::generate_url(lan_ip, port, "en");
-    
+
     // IPv6 URLs need brackets
     assert!(
         url.contains("[::1]") || url.contains("::1"),
@@ -475,18 +489,18 @@ fn test_cast_command_with_subtitle() {
     let device_name = "Living Room TV";
     let video_url = "http://192.168.1.100:8888/0";
     let subtitle_url = "http://192.168.1.100:8889/subtitles/en.vtt";
-    
+
     // Build catt command arguments as CastManager would
     let mut args = Vec::new();
     args.push("-d".to_string());
     args.push(device_name.to_string());
     args.push("cast".to_string());
     args.push(video_url.to_string());
-    
+
     // With subtitles - add -s flag
     args.push("-s".to_string());
     args.push(subtitle_url.to_string());
-    
+
     // Verify command structure
     assert_eq!(args.len(), 6, "Should have 6 arguments with subtitle");
     assert_eq!(args[0], "-d");
@@ -495,7 +509,7 @@ fn test_cast_command_with_subtitle() {
     assert_eq!(args[3], video_url);
     assert_eq!(args[4], "-s");
     assert_eq!(args[5], subtitle_url);
-    
+
     // Verify the full command would be:
     // catt -d "Living Room TV" cast "http://192.168.1.100:8888/0" -s "http://192.168.1.100:8889/subtitles/en.vtt"
     let full_cmd = format!(
@@ -511,16 +525,19 @@ fn test_cast_command_with_subtitle() {
 fn test_cast_command_without_subtitle() {
     let device_name = "Living Room TV";
     let video_url = "http://192.168.1.100:8888/0";
-    
+
     // Build command without subtitles
     let mut args = Vec::new();
     args.push("-d".to_string());
     args.push(device_name.to_string());
     args.push("cast".to_string());
     args.push(video_url.to_string());
-    
+
     assert_eq!(args.len(), 4, "Should have 4 arguments without subtitle");
-    assert!(!args.contains(&"-s".to_string()), "Should NOT contain -s flag");
+    assert!(
+        !args.contains(&"-s".to_string()),
+        "Should NOT contain -s flag"
+    );
 }
 
 // =============================================================================
@@ -533,24 +550,26 @@ fn test_cast_command_without_subtitle() {
 #[tokio::test]
 async fn test_handles_no_subtitles() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("GET", "/subtitles")
         .match_query(Matcher::UrlEncoded("imdb_id".into(), "9999999".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "data": [],
             "total_count": 0
-        }"#)
+        }"#,
+        )
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
     let results = client.search("tt9999999", None).await.unwrap();
-    
+
     mock.assert_async().await;
-    
+
     assert!(results.is_empty(), "Should return empty vec for no results");
 }
 
@@ -558,7 +577,7 @@ async fn test_handles_no_subtitles() {
 #[tokio::test]
 async fn test_handles_404_error() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("GET", "/subtitles")
         .match_query(Matcher::Any)
@@ -566,14 +585,14 @@ async fn test_handles_404_error() {
         .with_body("Not Found")
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
     let result = client.search("tt0000000", None).await;
-    
+
     // Should either return error or empty vec - both acceptable
     // Implementation choice: error is more informative
     mock.assert_async().await;
-    
+
     // TDD: Either behavior is acceptable initially
     // assert!(result.is_err() || result.unwrap().is_empty());
 }
@@ -588,7 +607,7 @@ async fn test_handles_404_error() {
 #[tokio::test]
 async fn test_rate_limit_handling() {
     let mut server = Server::new_async().await;
-    
+
     // First request returns 429
     let mock_429 = server
         .mock("GET", "/subtitles")
@@ -599,27 +618,27 @@ async fn test_rate_limit_handling() {
         .expect(1)
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
     let result = client.search("tt1877830", None).await;
-    
+
     mock_429.assert_async().await;
-    
+
     // Should return error with rate limit info
     // Implementation can either:
     // 1. Return error immediately (simpler)
     // 2. Retry with backoff (better UX)
-    
+
     // For TDD: just verify we handle 429 without panicking
     // The error should mention rate limit
     if let Err(e) = result {
         let error_msg = e.to_string().to_lowercase();
         // Error should be clear about what happened
         assert!(
-            error_msg.contains("rate") 
-            || error_msg.contains("429") 
-            || error_msg.contains("limit")
-            || error_msg.contains("too many"),
+            error_msg.contains("rate")
+                || error_msg.contains("429")
+                || error_msg.contains("limit")
+                || error_msg.contains("too many"),
             "Error should mention rate limiting: {}",
             error_msg
         );
@@ -631,18 +650,19 @@ async fn test_rate_limit_handling() {
 #[tokio::test]
 async fn test_rate_limit_retry_succeeds() {
     let mut server = Server::new_async().await;
-    
+
     // Note: mockito processes mocks in reverse order by default
     // So we create success mock first, then 429 mock
     // Or use explicit ordering
-    
+
     // Success response (second call)
     let mock_success = server
         .mock("GET", "/subtitles")
         .match_query(Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"{
+        .with_body(
+            r#"{
             "data": [
                 {
                     "id": "12345",
@@ -660,17 +680,18 @@ async fn test_rate_limit_retry_succeeds() {
                 }
             ],
             "total_count": 1
-        }"#)
+        }"#,
+        )
         .create_async()
         .await;
-    
+
     let client = SubtitleClient::with_base_url(server.url());
-    
+
     // This tests that after rate limit clears, we can succeed
     let result = client.search("tt1877830", None).await;
-    
+
     mock_success.assert_async().await;
-    
+
     // After rate limit recovery, should succeed
     assert!(result.is_ok(), "Should succeed after rate limit clears");
 }
@@ -699,7 +720,7 @@ fn test_language_priority() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let en_untrusted = SubtitleResult {
         id: "2".to_string(),
         file_id: 1002,
@@ -713,7 +734,7 @@ fn test_language_priority() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let en_trusted = SubtitleResult {
         id: "3".to_string(),
         file_id: 1003,
@@ -727,19 +748,19 @@ fn test_language_priority() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let results = vec![es_trusted.clone(), en_untrusted.clone(), en_trusted.clone()];
-    
+
     // Config: prefer English, then Spanish; prefer trusted
     let preferred_languages = vec!["en", "es"];
     let prefer_trusted = true;
-    
+
     // Auto-select logic
     let selected = auto_select_subtitle(&results, &preferred_languages, prefer_trusted);
-    
+
     assert!(selected.is_some(), "Should select a subtitle");
     let selected = selected.unwrap();
-    
+
     // Should select en_trusted (English first in priority, and it's trusted)
     assert_eq!(
         selected.id, "3",
@@ -766,36 +787,36 @@ fn test_trust_score_calculation() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let untrusted = SubtitleResult {
         from_trusted: false,
         ..trusted.clone()
     };
-    
+
     let ai_translated = SubtitleResult {
         ai_translated: true,
         ..trusted.clone()
     };
-    
+
     // Trusted > untrusted
     assert!(
         trusted.trust_score() > untrusted.trust_score(),
         "Trusted should have higher score"
     );
-    
+
     // Trusted non-AI > trusted AI
     assert!(
         trusted.trust_score() > ai_translated.trust_score(),
         "Non-AI should have higher score than AI"
     );
-    
+
     // High downloads boost score
     let high_downloads = SubtitleResult {
         downloads: 100000,
         from_trusted: false,
         ..trusted.clone()
     };
-    
+
     assert!(
         high_downloads.trust_score() > untrusted.trust_score(),
         "High downloads should boost score"
@@ -818,20 +839,20 @@ fn test_hearing_impaired_preference() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let hi = SubtitleResult {
         id: "2".to_string(),
         hearing_impaired: true,
         release: "Movie.HI".to_string(),
         ..normal.clone()
     };
-    
+
     let results = vec![hi.clone(), normal.clone()];
-    
+
     // When prefer_hearing_impaired = false, select normal
     let selected_normal = auto_select_subtitle_hi(&results, &["en"], false);
     assert_eq!(selected_normal.unwrap().id, "1", "Should select non-HI");
-    
+
     // When prefer_hearing_impaired = true, select HI
     let selected_hi = auto_select_subtitle_hi(&results, &["en"], true);
     assert_eq!(selected_hi.unwrap().id, "2", "Should select HI");
@@ -853,13 +874,13 @@ fn test_language_fallback() {
         hearing_impaired: false,
         ai_translated: false,
     };
-    
+
     let results = vec![spanish.clone()];
-    
+
     // Prefer English first, but only Spanish available
     let preferred = vec!["en", "es"];
     let selected = auto_select_subtitle(&results, &preferred, true);
-    
+
     assert!(selected.is_some(), "Should fall back to Spanish");
     assert_eq!(selected.unwrap().language, "es");
 }
@@ -878,7 +899,7 @@ fn test_subformat_from_extension() {
     assert_eq!(SubFormat::from_extension("ass"), SubFormat::Ass);
     assert_eq!(SubFormat::from_extension("ssa"), SubFormat::Ass);
     assert_eq!(SubFormat::from_extension("sub"), SubFormat::Sub);
-    
+
     // Unknown defaults to SRT
     assert_eq!(SubFormat::from_extension("xyz"), SubFormat::Srt);
 }
@@ -914,18 +935,16 @@ fn auto_select_subtitle<'a>(
     if results.is_empty() {
         return None;
     }
-    
+
     // Find best match for each language in priority order
     for lang in preferred_languages {
-        let mut lang_results: Vec<&SubtitleResult> = results
-            .iter()
-            .filter(|r| r.language == *lang)
-            .collect();
-        
+        let mut lang_results: Vec<&SubtitleResult> =
+            results.iter().filter(|r| r.language == *lang).collect();
+
         if lang_results.is_empty() {
             continue;
         }
-        
+
         // Sort by trust score (higher = better)
         if prefer_trusted {
             lang_results.sort_by(|a, b| b.trust_score().cmp(&a.trust_score()));
@@ -933,10 +952,10 @@ fn auto_select_subtitle<'a>(
             // Just by downloads
             lang_results.sort_by(|a, b| b.downloads.cmp(&a.downloads));
         }
-        
+
         return lang_results.first().copied();
     }
-    
+
     // Fallback: just return highest trust score
     results.iter().max_by_key(|r| r.trust_score())
 }
@@ -950,33 +969,43 @@ fn auto_select_subtitle_hi<'a>(
     if results.is_empty() {
         return None;
     }
-    
+
     for lang in preferred_languages {
-        let mut lang_results: Vec<&SubtitleResult> = results
-            .iter()
-            .filter(|r| r.language == *lang)
-            .collect();
-        
+        let mut lang_results: Vec<&SubtitleResult> =
+            results.iter().filter(|r| r.language == *lang).collect();
+
         if lang_results.is_empty() {
             continue;
         }
-        
+
         // Filter by HI preference
         let filtered: Vec<_> = if prefer_hi {
-            lang_results.iter().filter(|r| r.hearing_impaired).copied().collect()
+            lang_results
+                .iter()
+                .filter(|r| r.hearing_impaired)
+                .copied()
+                .collect()
         } else {
-            lang_results.iter().filter(|r| !r.hearing_impaired).copied().collect()
+            lang_results
+                .iter()
+                .filter(|r| !r.hearing_impaired)
+                .copied()
+                .collect()
         };
-        
+
         // If we have results matching HI preference, use those
-        let to_sort = if !filtered.is_empty() { filtered } else { lang_results };
-        
+        let to_sort = if !filtered.is_empty() {
+            filtered
+        } else {
+            lang_results
+        };
+
         // Sort by trust score
         let mut sorted = to_sort;
         sorted.sort_by(|a, b| b.trust_score().cmp(&a.trust_score()));
-        
+
         return sorted.first().copied();
     }
-    
+
     None
 }

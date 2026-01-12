@@ -119,10 +119,7 @@ impl TmdbClient {
 
     /// Search for movies and TV shows
     pub async fn search(&self, query: &str) -> Result<Vec<SearchResult>> {
-        let endpoint = format!(
-            "/search/multi?query={}&page=1",
-            urlencoding::encode(query)
-        );
+        let endpoint = format!("/search/multi?query={}&page=1", urlencoding::encode(query));
 
         let response: SearchResponse = self.get(&endpoint).await?;
         Ok(response.into_results())
@@ -156,10 +153,12 @@ impl TmdbClient {
     }
 
     // Legacy method names for backwards compatibility
-    
+
     /// Get movie details (legacy name)
     pub async fn movie(&self, id: &str) -> Result<SearchResult> {
-        let id: u64 = id.parse().map_err(|_| TmdbError::InvalidResponse("Invalid movie ID".into()))?;
+        let id: u64 = id
+            .parse()
+            .map_err(|_| TmdbError::InvalidResponse("Invalid movie ID".into()))?;
         let detail = self.movie_detail(id).await?;
         Ok(SearchResult {
             id: detail.id,
@@ -174,7 +173,9 @@ impl TmdbClient {
 
     /// Get TV show details (legacy name)
     pub async fn tv_show(&self, id: &str) -> Result<SearchResult> {
-        let id: u64 = id.parse().map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
+        let id: u64 = id
+            .parse()
+            .map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
         let detail = self.tv_detail(id).await?;
         Ok(SearchResult {
             id: detail.id,
@@ -189,14 +190,18 @@ impl TmdbClient {
 
     /// Get TV show seasons (legacy name)
     pub async fn seasons(&self, id: &str) -> Result<Vec<SeasonSummary>> {
-        let id: u64 = id.parse().map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
+        let id: u64 = id
+            .parse()
+            .map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
         let detail = self.tv_detail(id).await?;
         Ok(detail.seasons)
     }
 
     /// Get episodes for a season (legacy name)
     pub async fn episodes(&self, id: &str, season: u16) -> Result<Vec<Episode>> {
-        let id: u64 = id.parse().map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
+        let id: u64 = id
+            .parse()
+            .map_err(|_| TmdbError::InvalidResponse("Invalid TV ID".into()))?;
         self.tv_season(id, season as u8).await
     }
 }

@@ -5,7 +5,7 @@
 
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, BorderType, Clear, Gauge, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Gauge, Paragraph},
 };
 
 use crate::models::{CastDevice, CastState, PlaybackStatus};
@@ -254,10 +254,7 @@ impl PlayerView {
 
         // Add subtitle indicator if active
         if self.subtitles_active {
-            let lang = self
-                .subtitle_language
-                .as_deref()
-                .unwrap_or("??");
+            let lang = self.subtitle_language.as_deref().unwrap_or("??");
             spans.push(Span::styled("  │  ", Theme::dimmed()));
             spans.push(Span::styled("CC ", Theme::accent()));
             spans.push(Span::styled(lang.to_uppercase(), Theme::secondary()));
@@ -301,7 +298,7 @@ mod tests {
     fn sample_status_playing() -> PlaybackStatus {
         PlaybackStatus {
             state: CastState::Playing,
-            position: Duration::from_secs(2723), // 45:23
+            position: Duration::from_secs(2723),  // 45:23
             duration: Duration::from_secs(10560), // 2:56:00
             volume: 0.8,
             title: Some("The Batman".to_string()),

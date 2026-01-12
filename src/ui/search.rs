@@ -173,11 +173,7 @@ impl SearchView {
         };
 
         // Neon-styled search prompt
-        let prompt = if self.loading {
-            "⟳ "
-        } else {
-            "⌕ "
-        };
+        let prompt = if self.loading { "⟳ " } else { "⌕ " };
 
         let text = format!("{}{}", prompt, display_query);
 
@@ -194,16 +190,14 @@ impl SearchView {
             Theme::input()
         };
 
-        let search_box = Paragraph::new(text)
-            .style(input_style)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(border_style)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title(Span::styled(" SEARCH ", Theme::title()))
-                    .title_alignment(Alignment::Left),
-            );
+        let search_box = Paragraph::new(text).style(input_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .title(Span::styled(" SEARCH ", Theme::title()))
+                .title_alignment(Alignment::Left),
+        );
 
         frame.render_widget(search_box, area);
     }
@@ -272,30 +266,42 @@ impl SearchView {
 
                 // Format: ▸ Title (Year) [Type] ★ Rating
                 let marker = if is_selected { "▸ " } else { "  " };
-                let year_str = result
-                    .year
-                    .map(|y| format!(" ({})", y))
-                    .unwrap_or_default();
+                let year_str = result.year.map(|y| format!(" ({})", y)).unwrap_or_default();
                 let type_str = match result.media_type {
                     crate::models::MediaType::Movie => "MOVIE",
                     crate::models::MediaType::Tv => "TV",
                 };
 
                 let line = Line::from(vec![
-                    Span::styled(marker, if is_selected { Theme::accent() } else { Theme::dimmed() }),
-                    Span::styled(&result.title, if is_selected { Theme::highlighted() } else { Theme::text() }),
+                    Span::styled(
+                        marker,
+                        if is_selected {
+                            Theme::accent()
+                        } else {
+                            Theme::dimmed()
+                        },
+                    ),
+                    Span::styled(
+                        &result.title,
+                        if is_selected {
+                            Theme::highlighted()
+                        } else {
+                            Theme::text()
+                        },
+                    ),
                     Span::styled(year_str, Theme::year()),
                     Span::raw(" "),
                     Span::styled(format!("[{}]", type_str), Theme::secondary()),
                     Span::raw(" "),
-                    Span::styled(format!("★ {:.1}", result.vote_average), 
+                    Span::styled(
+                        format!("★ {:.1}", result.vote_average),
                         if result.vote_average >= 7.0 {
                             Theme::success()
                         } else if result.vote_average >= 5.0 {
                             Theme::warning()
                         } else {
                             Theme::dimmed()
-                        }
+                        },
                     ),
                 ]);
 

@@ -7,7 +7,7 @@
 //! - cast_test: Chromecast manager tests
 //! - subtitles_test: Subtitle client tests (OpenSubtitles API + conversion)
 //! - ui_test: UI component tests
-//! - cli_test: CLI command tests
+//! - e2e_test: End-to-end flow tests (Search -> Detail -> Sources -> Cast)
 
 // Note: Each test file is a separate integration test crate
 // Tests are run individually by cargo, not via mod.rs

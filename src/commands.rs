@@ -7,9 +7,9 @@ use serde::Serialize;
 
 use crate::api::{TmdbClient, TorrentioClient};
 use crate::cli::{
-    CastCmd, DevicesCmd, ExitCode, InfoCmd, MediaTypeFilter, Output, PlayCmd, PauseCmd, 
-    SearchCmd, SeekCmd, SeekPosition, StatusCmd, StopCmd, StreamsCmd, SubtitlesCmd, 
-    TrendingCmd, TrendingWindow, VolumeCmd, VolumeLevel, PlaybackState, PlaybackStatus,
+    CastCmd, CastMagnetCmd, DevicesCmd, ExitCode, InfoCmd, MediaTypeFilter, Output, PauseCmd,
+    PlayCmd, PlaybackState, PlaybackStatus, SearchCmd, SeekCmd, SeekPosition, StatusCmd, StopCmd,
+    StreamsCmd, SubtitlesCmd, TrendingCmd, TrendingWindow, VolumeCmd, VolumeLevel,
 };
 use crate::models::{CastDevice, MediaType, Quality, StreamSource};
 use crate::stream::SubtitleClient;
@@ -30,16 +30,18 @@ fn get_tmdb_api_key() -> Option<String> {
 pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
     let api_key = match get_tmdb_api_key() {
         Some(key) => key,
-        None => return output.error(
-            "TMDB_API_KEY not set. Export it or add to config.",
-            ExitCode::Error
-        ),
+        None => {
+            return output.error(
+                "TMDB_API_KEY not set. Export it or add to config.",
+                ExitCode::Error,
+            )
+        }
     };
 
     let client = TmdbClient::new(api_key);
-    
+
     output.info(format!("Searching for: {}", cmd.query));
-    
+
     match client.search(&cmd.query).await {
         Ok(mut results) => {
             // Filter by media type if specified
@@ -49,7 +51,7 @@ pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
                     MediaTypeFilter::Tv => r.media_type == MediaType::Tv,
                 });
             }
-            
+
             // Filter by year range
             if let Some(year_from) = cmd.year_from {
                 results.retain(|r| r.year.map(|y| y >= year_from).unwrap_or(false));
@@ -57,10 +59,10 @@ pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
             if let Some(year_to) = cmd.year_to {
                 results.retain(|r| r.year.map(|y| y <= year_to).unwrap_or(false));
             }
-            
+
             // Limit results
             results.truncate(cmd.limit);
-            
+
             if let Err(e) = output.print(&results) {
                 return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
             }
@@ -77,20 +79,22 @@ pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
 pub async fn trending_cmd(cmd: TrendingCmd, output: &Output) -> ExitCode {
     let api_key = match get_tmdb_api_key() {
         Some(key) => key,
-        None => return output.error(
-            "TMDB_API_KEY not set. Export it or add to config.",
-            ExitCode::Error
-        ),
+        None => {
+            return output.error(
+                "TMDB_API_KEY not set. Export it or add to config.",
+                ExitCode::Error,
+            )
+        }
     };
 
     let client = TmdbClient::new(api_key);
-    
+
     let window_str = match cmd.window {
         TrendingWindow::Day => "day",
         TrendingWindow::Week => "week",
     };
     output.info(format!("Fetching trending ({})...", window_str));
-    
+
     match client.trending().await {
         Ok(mut results) => {
             // Filter by media type if specified
@@ -100,16 +104,19 @@ pub async fn trending_cmd(cmd: TrendingCmd, output: &Output) -> ExitCode {
                     MediaTypeFilter::Tv => r.media_type == MediaType::Tv,
                 });
             }
-            
+
             // Limit results
             results.truncate(cmd.limit);
-            
+
             if let Err(e) = output.print(&results) {
                 return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
             }
             ExitCode::Success
         }
-        Err(e) => output.error(format!("Trending fetch failed: {}", e), ExitCode::NetworkError),
+        Err(e) => output.error(
+            format!("Trending fetch failed: {}", e),
+            ExitCode::NetworkError,
+        ),
     }
 }
 
@@ -120,52 +127,52 @@ pub async fn trending_cmd(cmd: TrendingCmd, output: &Output) -> ExitCode {
 pub async fn info_cmd(cmd: InfoCmd, output: &Output) -> ExitCode {
     let api_key = match get_tmdb_api_key() {
         Some(key) => key,
-        None => return output.error(
-            "TMDB_API_KEY not set. Export it or add to config.",
-            ExitCode::Error
-        ),
+        None => {
+            return output.error(
+                "TMDB_API_KEY not set. Export it or add to config.",
+                ExitCode::Error,
+            )
+        }
     };
 
     let client = TmdbClient::new(api_key);
-    
+
     output.info(format!("Getting info for: {}", cmd.id));
-    
+
     // Try to parse as TMDB ID (number)
     if let Ok(tmdb_id) = cmd.id.parse::<u64>() {
         // Need media type for TMDB ID lookup
         match cmd.media_type {
-            Some(MediaTypeFilter::Movie) => {
-                match client.movie_detail(tmdb_id).await {
-                    Ok(detail) => {
-                        if let Err(e) = output.print(&detail) {
-                            return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
-                        }
-                        ExitCode::Success
+            Some(MediaTypeFilter::Movie) => match client.movie_detail(tmdb_id).await {
+                Ok(detail) => {
+                    if let Err(e) = output.print(&detail) {
+                        return output
+                            .error(format!("Failed to serialize: {}", e), ExitCode::Error);
                     }
-                    Err(e) => output.error(format!("Movie info failed: {}", e), ExitCode::NetworkError),
+                    ExitCode::Success
                 }
-            }
-            Some(MediaTypeFilter::Tv) => {
-                match client.tv_detail(tmdb_id).await {
-                    Ok(detail) => {
-                        if let Err(e) = output.print(&detail) {
-                            return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
-                        }
-                        ExitCode::Success
+                Err(e) => output.error(format!("Movie info failed: {}", e), ExitCode::NetworkError),
+            },
+            Some(MediaTypeFilter::Tv) => match client.tv_detail(tmdb_id).await {
+                Ok(detail) => {
+                    if let Err(e) = output.print(&detail) {
+                        return output
+                            .error(format!("Failed to serialize: {}", e), ExitCode::Error);
                     }
-                    Err(e) => output.error(format!("TV info failed: {}", e), ExitCode::NetworkError),
+                    ExitCode::Success
                 }
-            }
+                Err(e) => output.error(format!("TV info failed: {}", e), ExitCode::NetworkError),
+            },
             None => output.error(
                 "Media type required for TMDB ID lookup. Use -t movie or -t tv.",
-                ExitCode::InvalidArgs
+                ExitCode::InvalidArgs,
             ),
         }
     } else {
         // Assume it's an IMDB ID - search for it
         output.error(
             "IMDB ID lookup not yet supported. Use TMDB ID with -t flag.",
-            ExitCode::InvalidArgs
+            ExitCode::InvalidArgs,
         )
     }
 }
@@ -176,21 +183,23 @@ pub async fn info_cmd(cmd: InfoCmd, output: &Output) -> ExitCode {
 
 pub async fn streams_cmd(cmd: StreamsCmd, output: &Output) -> ExitCode {
     let client = TorrentioClient::new();
-    
+
     output.info(format!("Finding streams for: {}", cmd.imdb_id));
-    
+
     let result = if let (Some(season), Some(episode)) = (cmd.season, cmd.episode) {
-        client.episode_streams(&cmd.imdb_id, season as u16, episode).await
+        client
+            .episode_streams(&cmd.imdb_id, season as u16, episode)
+            .await
     } else {
         client.movie_streams(&cmd.imdb_id).await
     };
-    
+
     match result {
         Ok(mut streams) => {
             if streams.is_empty() {
                 return output.error("No streams found", ExitCode::NoStreams);
             }
-            
+
             // Filter by quality if specified
             if let Some(quality_filter) = cmd.quality {
                 let min_quality = match quality_filter {
@@ -201,7 +210,7 @@ pub async fn streams_cmd(cmd: StreamsCmd, output: &Output) -> ExitCode {
                 };
                 streams.retain(|s| s.quality.rank() >= min_quality.rank());
             }
-            
+
             // Sort streams
             match cmd.sort {
                 crate::cli::StreamSort::Seeds => {
@@ -211,28 +220,33 @@ pub async fn streams_cmd(cmd: StreamsCmd, output: &Output) -> ExitCode {
                     streams.sort_by(|a, b| b.quality.rank().cmp(&a.quality.rank()));
                 }
                 crate::cli::StreamSort::Size => {
-                    streams.sort_by(|a, b| {
-                        b.size_bytes.unwrap_or(0).cmp(&a.size_bytes.unwrap_or(0))
-                    });
+                    streams
+                        .sort_by(|a, b| b.size_bytes.unwrap_or(0).cmp(&a.size_bytes.unwrap_or(0)));
                 }
             }
-            
+
             // Limit results
             streams.truncate(cmd.limit);
-            
+
             // Create output with index for easy reference
             let indexed: Vec<IndexedStream> = streams
                 .into_iter()
                 .enumerate()
-                .map(|(i, s)| IndexedStream { index: i, stream: s })
+                .map(|(i, s)| IndexedStream {
+                    index: i,
+                    stream: s,
+                })
                 .collect();
-            
+
             if let Err(e) = output.print(&indexed) {
                 return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
             }
             ExitCode::Success
         }
-        Err(e) => output.error(format!("Stream fetch failed: {}", e), ExitCode::NetworkError),
+        Err(e) => output.error(
+            format!("Stream fetch failed: {}", e),
+            ExitCode::NetworkError,
+        ),
     }
 }
 
@@ -251,21 +265,26 @@ pub async fn subtitles_cmd(cmd: SubtitlesCmd, output: &Output) -> ExitCode {
     let client = SubtitleClient::new();
     let languages = cmd.languages();
     let lang = languages.first().copied();
-    
-    output.info(format!("Searching subtitles for: {} ({})", cmd.imdb_id, cmd.lang));
-    
+
+    output.info(format!(
+        "Searching subtitles for: {} ({})",
+        cmd.imdb_id, cmd.lang
+    ));
+
     let result = if let (Some(season), Some(episode)) = (cmd.season, cmd.episode) {
-        client.search_episode(&cmd.imdb_id, season as u16, episode, lang).await
+        client
+            .search_episode(&cmd.imdb_id, season as u16, episode, lang)
+            .await
     } else {
         client.search(&cmd.imdb_id, lang).await
     };
-    
+
     match result {
         Ok(mut subs) => {
             if subs.is_empty() {
                 return output.error("No subtitles found", ExitCode::NoStreams);
             }
-            
+
             // Filter by preferences
             if cmd.hearing_impaired {
                 subs.retain(|s| s.hearing_impaired);
@@ -273,19 +292,22 @@ pub async fn subtitles_cmd(cmd: SubtitlesCmd, output: &Output) -> ExitCode {
             if cmd.trusted {
                 subs.retain(|s| s.from_trusted);
             }
-            
+
             // Sort by trust score
-            subs.sort_by(|a, b| b.trust_score().cmp(&a.trust_score()));
-            
+            subs.sort_by_key(|s| std::cmp::Reverse(s.trust_score()));
+
             // Limit results
             subs.truncate(cmd.limit);
-            
+
             if let Err(e) = output.print(&subs) {
                 return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
             }
             ExitCode::Success
         }
-        Err(e) => output.error(format!("Subtitle search failed: {}", e), ExitCode::NetworkError),
+        Err(e) => output.error(
+            format!("Subtitle search failed: {}", e),
+            ExitCode::NetworkError,
+        ),
     }
 }
 
@@ -295,10 +317,10 @@ pub async fn subtitles_cmd(cmd: SubtitlesCmd, output: &Output) -> ExitCode {
 
 pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
     output.info("Scanning for Chromecast devices...");
-    
+
     // Use catt scan to discover devices
     let timeout = cmd.timeout;
-    
+
     match tokio::process::Command::new("catt")
         .arg("scan")
         .arg("-t")
@@ -309,10 +331,10 @@ pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
         Ok(result) => {
             let stdout = String::from_utf8_lossy(&result.stdout);
             let stderr = String::from_utf8_lossy(&result.stderr);
-            
+
             // Parse catt output
             let devices = CastDevice::parse_catt_scan(&stdout);
-            
+
             if devices.is_empty() {
                 // Check if catt reported anything in stderr
                 if !stderr.is_empty() && stderr.contains("No devices") {
@@ -326,10 +348,8 @@ pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
                 if let Err(e) = output.print(&devices_stderr) {
                     return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
                 }
-            } else {
-                if let Err(e) = output.print(&devices) {
-                    return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
-                }
+            } else if let Err(e) = output.print(&devices) {
+                return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
             }
             ExitCode::Success
         }
@@ -337,7 +357,7 @@ pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
             if e.kind() == std::io::ErrorKind::NotFound {
                 output.error(
                     "catt not found. Install with: pip install catt",
-                    ExitCode::Error
+                    ExitCode::Error,
                 )
             } else {
                 output.error(format!("Device scan failed: {}", e), ExitCode::NetworkError)
@@ -353,36 +373,49 @@ pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
 pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> ExitCode {
     let device_name = match cmd.device.as_deref().or(device) {
         Some(d) => d,
-        None => return output.error(
-            "No device specified. Use --device or -d flag.",
-            ExitCode::DeviceNotFound
-        ),
+        None => {
+            return output.error(
+                "No device specified. Use --device or -d flag.",
+                ExitCode::DeviceNotFound,
+            )
+        }
     };
-    
+
     output.info(format!("Casting {} to {}...", cmd.imdb_id, device_name));
-    
+
     // Step 1: Get streams
     let torrentio = TorrentioClient::new();
     let streams_result = if let (Some(season), Some(episode)) = (cmd.season, cmd.episode) {
-        torrentio.episode_streams(&cmd.imdb_id, season as u16, episode).await
+        torrentio
+            .episode_streams(&cmd.imdb_id, season as u16, episode)
+            .await
     } else {
         torrentio.movie_streams(&cmd.imdb_id).await
     };
-    
+
     let mut streams = match streams_result {
         Ok(s) if s.is_empty() => {
             return output.error("No streams found for this content", ExitCode::NoStreams);
         }
         Ok(s) => s,
-        Err(e) => return output.error(format!("Failed to get streams: {}", e), ExitCode::NetworkError),
+        Err(e) => {
+            return output.error(
+                format!("Failed to get streams: {}", e),
+                ExitCode::NetworkError,
+            )
+        }
     };
-    
+
     // Step 2: Select stream (by index or quality preference)
     let stream = if let Some(idx) = cmd.index {
         if idx >= streams.len() {
             return output.error(
-                format!("Stream index {} out of range (0-{})", idx, streams.len() - 1),
-                ExitCode::InvalidArgs
+                format!(
+                    "Stream index {} out of range (0-{})",
+                    idx,
+                    streams.len() - 1
+                ),
+                ExitCode::InvalidArgs,
             );
         }
         streams.remove(idx)
@@ -407,23 +440,26 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         }
         streams.remove(0)
     };
-    
+
     // Step 3: Generate magnet link
     let magnet = stream.to_magnet(&cmd.imdb_id);
-    output.info(format!("Selected: {} ({}) - {} seeds", stream.name, stream.quality, stream.seeds));
-    
+    output.info(format!(
+        "Selected: {} ({}) - {} seeds",
+        stream.name, stream.quality, stream.seeds
+    ));
+
     // Step 4: Start webtorrent streaming
     output.info("Starting torrent stream...");
-    
+
     // Get local IP for streaming
     let local_ip = match local_ip_address::local_ip() {
         Ok(ip) => ip,
         Err(e) => return output.error(format!("Failed to get local IP: {}", e), ExitCode::Error),
     };
-    
+
     let port = 8888u16;
     let file_idx = stream.file_idx.unwrap_or(0);
-    
+
     // Start webtorrent in background
     let mut webtorrent = match tokio::process::Command::new("webtorrent")
         .arg(&magnet)
@@ -442,20 +478,23 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
             if e.kind() == std::io::ErrorKind::NotFound {
                 return output.error(
                     "webtorrent not found. Install with: npm install -g webtorrent-cli",
-                    ExitCode::Error
+                    ExitCode::Error,
                 );
             }
-            return output.error(format!("Failed to start webtorrent: {}", e), ExitCode::Error);
+            return output.error(
+                format!("Failed to start webtorrent: {}", e),
+                ExitCode::Error,
+            );
         }
     };
-    
+
     // Wait a bit for webtorrent to start
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-    
+
     // Build stream URL
     let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
     output.info(format!("Stream URL: {}", stream_url));
-    
+
     // Step 5: Cast to device using catt
     let mut catt_args = vec![
         "-d".to_string(),
@@ -463,21 +502,24 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         "cast".to_string(),
         stream_url.clone(),
     ];
-    
+
     // Add subtitle if requested
     if let Some(sub_lang) = &cmd.subtitle {
         // For now just note it - full subtitle integration would download and serve
-        output.info(format!("Subtitle requested: {} (not yet implemented)", sub_lang));
+        output.info(format!(
+            "Subtitle requested: {} (not yet implemented)",
+            sub_lang
+        ));
     }
-    
+
     // Add start position if specified
     if let Some(start) = cmd.start {
         catt_args.push("--start".to_string());
         catt_args.push(start.to_string());
     }
-    
+
     output.info(format!("Casting to {}...", device_name));
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -493,7 +535,7 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
                     quality: String,
                     seeds: u32,
                 }
-                
+
                 let response = CastSuccess {
                     status: "casting",
                     device: device_name.to_string(),
@@ -501,13 +543,13 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
                     quality: stream.quality.to_string(),
                     seeds: stream.seeds,
                 };
-                
+
                 if let Err(e) = output.print(&response) {
                     // Kill webtorrent on error
                     let _ = webtorrent.kill().await;
                     return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
                 }
-                
+
                 // Note: webtorrent process continues in background
                 // In a real implementation, we'd manage this process
                 ExitCode::Success
@@ -522,7 +564,166 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
             if e.kind() == std::io::ErrorKind::NotFound {
                 output.error(
                     "catt not found. Install with: pip install catt",
-                    ExitCode::Error
+                    ExitCode::Error,
+                )
+            } else {
+                output.error(format!("Cast failed: {}", e), ExitCode::CastFailed)
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Cast Magnet Command
+// =============================================================================
+
+pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &Output) -> ExitCode {
+    let device_name = match cmd.device.as_deref().or(device) {
+        Some(d) => d,
+        None => {
+            return output.error(
+                "No device specified. Use --device or -d flag.",
+                ExitCode::DeviceNotFound,
+            )
+        }
+    };
+
+    // Validate magnet link
+    if !cmd.magnet.starts_with("magnet:?") {
+        return output.error(
+            "Invalid magnet link. Must start with 'magnet:?'",
+            ExitCode::InvalidArgs,
+        );
+    }
+
+    output.info(format!("Casting magnet to {}...", device_name));
+
+    // Get local IP for streaming
+    let local_ip = match local_ip_address::local_ip() {
+        Ok(ip) => ip,
+        Err(e) => return output.error(format!("Failed to get local IP: {}", e), ExitCode::Error),
+    };
+
+    let port = 8888u16;
+    let file_idx = cmd.file_idx.unwrap_or(0);
+
+    // Start webtorrent in background
+    let mut webtorrent = match tokio::process::Command::new("webtorrent")
+        .arg(&cmd.magnet)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--hostname")
+        .arg(local_ip.to_string())
+        .arg("--not-on-top")
+        .arg("--quiet")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return output.error(
+                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
+                    ExitCode::Error,
+                );
+            }
+            return output.error(
+                format!("Failed to start webtorrent: {}", e),
+                ExitCode::Error,
+            );
+        }
+    };
+
+    output.info("Starting torrent stream...");
+
+    // Wait for webtorrent to start
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // Build stream URL
+    let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
+    output.info(format!("Stream URL: {}", stream_url));
+
+    // Build catt args
+    let mut catt_args = vec![
+        "-d".to_string(),
+        device_name.to_string(),
+        "cast".to_string(),
+        stream_url.clone(),
+    ];
+
+    // Handle subtitles
+    if let Some(sub_file) = &cmd.subtitle_file {
+        // Use local subtitle file
+        if !sub_file.exists() {
+            let _ = webtorrent.kill().await;
+            return output.error(
+                format!("Subtitle file not found: {}", sub_file.display()),
+                ExitCode::InvalidArgs,
+            );
+        }
+        catt_args.push("--subtitles".to_string());
+        catt_args.push(sub_file.to_string_lossy().to_string());
+        output.info(format!("Using subtitle file: {}", sub_file.display()));
+    } else if let Some(sub_lang) = &cmd.subtitle {
+        // Search for subtitles via OpenSubtitles
+        output.info(format!("Searching for {} subtitles...", sub_lang));
+
+        // Try to extract info hash from magnet for subtitle search
+        // For now, note that this would need content identification
+        output.info(format!(
+            "Subtitle search for '{}' - use --subtitle-file for local subs",
+            sub_lang
+        ));
+    }
+
+    // Add start position if specified
+    if let Some(start) = cmd.start {
+        catt_args.push("--start".to_string());
+        catt_args.push(start.to_string());
+    }
+
+    output.info(format!("Casting to {}...", device_name));
+
+    match tokio::process::Command::new("catt")
+        .args(&catt_args)
+        .output()
+        .await
+    {
+        Ok(result) => {
+            if result.status.success() {
+                #[derive(Serialize)]
+                struct CastMagnetSuccess {
+                    status: &'static str,
+                    device: String,
+                    stream_url: String,
+                }
+
+                let response = CastMagnetSuccess {
+                    status: "casting",
+                    device: device_name.to_string(),
+                    stream_url,
+                };
+
+                if let Err(e) = output.print(&response) {
+                    let _ = webtorrent.kill().await;
+                    return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
+                }
+
+                // webtorrent continues in background
+                ExitCode::Success
+            } else {
+                let _ = webtorrent.kill().await;
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                output.error(format!("Cast failed: {}", stderr), ExitCode::CastFailed)
+            }
+        }
+        Err(e) => {
+            let _ = webtorrent.kill().await;
+            if e.kind() == std::io::ErrorKind::NotFound {
+                output.error(
+                    "catt not found. Install with: pip install catt",
+                    ExitCode::Error,
                 )
             } else {
                 output.error(format!("Cast failed: {}", e), ExitCode::CastFailed)
@@ -537,12 +738,12 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
 
 pub async fn status_cmd(_cmd: StatusCmd, device: Option<&str>, output: &Output) -> ExitCode {
     let mut catt_args = vec!["status".to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -550,14 +751,14 @@ pub async fn status_cmd(_cmd: StatusCmd, device: Option<&str>, output: &Output) 
     {
         Ok(result) => {
             let stdout = String::from_utf8_lossy(&result.stdout);
-            
+
             if let Some(status) = crate::models::PlaybackStatus::parse_catt_status(&stdout) {
                 // Compute values before moving
                 let progress = status.progress() as f64;
                 let position = status.position.as_secs();
                 let duration = status.duration.as_secs();
                 let volume = (status.volume * 100.0) as u8;
-                
+
                 // Convert to CLI PlaybackStatus
                 let cli_status = PlaybackStatus {
                     state: match status.state {
@@ -576,7 +777,7 @@ pub async fn status_cmd(_cmd: StatusCmd, device: Option<&str>, output: &Output) 
                     progress: Some(progress),
                     volume: Some(volume),
                 };
-                
+
                 if let Err(e) = output.print_json(&cli_status) {
                     return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
                 }
@@ -592,7 +793,10 @@ pub async fn status_cmd(_cmd: StatusCmd, device: Option<&str>, output: &Output) 
         }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                output.error("catt not found. Install with: pip install catt", ExitCode::Error)
+                output.error(
+                    "catt not found. Install with: pip install catt",
+                    ExitCode::Error,
+                )
             } else {
                 // Return idle on error
                 let status = PlaybackStatus::default();
@@ -619,7 +823,7 @@ pub async fn pause_cmd(_cmd: PauseCmd, device: Option<&str>, output: &Output) ->
 
 pub async fn stop_cmd(cmd: StopCmd, device: Option<&str>, output: &Output) -> ExitCode {
     let result = playback_control("stop", device, output).await;
-    
+
     if cmd.kill_stream && result == ExitCode::Success {
         // Try to kill any running webtorrent processes
         let _ = tokio::process::Command::new("pkill")
@@ -629,18 +833,18 @@ pub async fn stop_cmd(cmd: StopCmd, device: Option<&str>, output: &Output) -> Ex
             .await;
         output.info("Stopped torrent stream");
     }
-    
+
     result
 }
 
 async fn playback_control(action: &str, device: Option<&str>, output: &Output) -> ExitCode {
     let mut catt_args = vec![action.to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -649,7 +853,9 @@ async fn playback_control(action: &str, device: Option<&str>, output: &Output) -
         Ok(result) => {
             if result.status.success() {
                 #[derive(Serialize)]
-                struct ActionOk { status: &'static str }
+                struct ActionOk {
+                    status: &'static str,
+                }
                 if output.print(&ActionOk { status: "ok" }).is_err() {
                     return ExitCode::Error;
                 }
@@ -661,7 +867,10 @@ async fn playback_control(action: &str, device: Option<&str>, output: &Output) -
         }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                output.error("catt not found. Install with: pip install catt", ExitCode::Error)
+                output.error(
+                    "catt not found. Install with: pip install catt",
+                    ExitCode::Error,
+                )
             } else {
                 output.error(format!("{} failed: {}", action, e), ExitCode::Error)
             }
@@ -685,17 +894,20 @@ pub async fn seek_cmd(cmd: SeekCmd, device: Option<&str>, output: &Output) -> Ex
             return relative_seek(-secs, device, output).await;
         }
         SeekPosition::Invalid(s) => {
-            return output.error(format!("Invalid seek position: {}", s), ExitCode::InvalidArgs);
+            return output.error(
+                format!("Invalid seek position: {}", s),
+                ExitCode::InvalidArgs,
+            );
         }
     };
-    
+
     let mut catt_args = vec!["seek".to_string(), position.to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -704,8 +916,17 @@ pub async fn seek_cmd(cmd: SeekCmd, device: Option<&str>, output: &Output) -> Ex
         Ok(result) => {
             if result.status.success() {
                 #[derive(Serialize)]
-                struct SeekOk { status: &'static str, position: f64 }
-                if output.print(&SeekOk { status: "ok", position }).is_err() {
+                struct SeekOk {
+                    status: &'static str,
+                    position: f64,
+                }
+                if output
+                    .print(&SeekOk {
+                        status: "ok",
+                        position,
+                    })
+                    .is_err()
+                {
                     return ExitCode::Error;
                 }
                 ExitCode::Success
@@ -725,14 +946,14 @@ async fn relative_seek(delta: i64, device: Option<&str>, output: &Output) -> Exi
     } else {
         ("rewind", (-delta) as u64)
     };
-    
+
     let mut catt_args = vec![action.to_string(), amount.to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -741,8 +962,17 @@ async fn relative_seek(delta: i64, device: Option<&str>, output: &Output) -> Exi
         Ok(result) => {
             if result.status.success() {
                 #[derive(Serialize)]
-                struct SeekOk { status: &'static str, delta: i64 }
-                if output.print(&SeekOk { status: "ok", delta }).is_err() {
+                struct SeekOk {
+                    status: &'static str,
+                    delta: i64,
+                }
+                if output
+                    .print(&SeekOk {
+                        status: "ok",
+                        delta,
+                    })
+                    .is_err()
+                {
                     return ExitCode::Error;
                 }
                 ExitCode::Success
@@ -772,17 +1002,20 @@ pub async fn volume_cmd(cmd: VolumeCmd, device: Option<&str>, output: &Output) -
             }
         }
         VolumeLevel::Invalid(s) => {
-            return output.error(format!("Invalid volume level: {}", s), ExitCode::InvalidArgs);
+            return output.error(
+                format!("Invalid volume level: {}", s),
+                ExitCode::InvalidArgs,
+            );
         }
     };
-    
+
     let mut catt_args = vec!["volume".to_string(), level.to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -791,8 +1024,17 @@ pub async fn volume_cmd(cmd: VolumeCmd, device: Option<&str>, output: &Output) -
         Ok(result) => {
             if result.status.success() {
                 #[derive(Serialize)]
-                struct VolumeOk { status: &'static str, volume: u8 }
-                if output.print(&VolumeOk { status: "ok", volume: level }).is_err() {
+                struct VolumeOk {
+                    status: &'static str,
+                    volume: u8,
+                }
+                if output
+                    .print(&VolumeOk {
+                        status: "ok",
+                        volume: level,
+                    })
+                    .is_err()
+                {
                     return ExitCode::Error;
                 }
                 ExitCode::Success
@@ -805,15 +1047,20 @@ pub async fn volume_cmd(cmd: VolumeCmd, device: Option<&str>, output: &Output) -
     }
 }
 
-async fn volume_relative(action: &str, _steps: u8, device: Option<&str>, output: &Output) -> ExitCode {
+async fn volume_relative(
+    action: &str,
+    _steps: u8,
+    device: Option<&str>,
+    output: &Output,
+) -> ExitCode {
     // catt doesn't have stepped volume, just volumeup/volumedown
     let mut catt_args = vec![action.to_string()];
-    
+
     if let Some(d) = device {
         catt_args.insert(0, "-d".to_string());
         catt_args.insert(1, d.to_string());
     }
-    
+
     match tokio::process::Command::new("catt")
         .args(&catt_args)
         .output()
@@ -822,7 +1069,9 @@ async fn volume_relative(action: &str, _steps: u8, device: Option<&str>, output:
         Ok(result) => {
             if result.status.success() {
                 #[derive(Serialize)]
-                struct VolumeOk { status: &'static str }
+                struct VolumeOk {
+                    status: &'static str,
+                }
                 if output.print(&VolumeOk { status: "ok" }).is_err() {
                     return ExitCode::Error;
                 }

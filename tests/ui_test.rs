@@ -17,8 +17,10 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use streamtui::{App, AppScreen, MediaType, Quality, SearchResult};
-use streamtui::ui::theme::{color_to_rgb, contrast_ratio, meets_wcag_aa, meets_wcag_aa_large, Theme};
+use streamtui::ui::theme::{
+    color_to_rgb, contrast_ratio, meets_wcag_aa, meets_wcag_aa_large, Theme,
+};
+use streamtui::{App, AppState, MediaType, Quality, SearchResult};
 
 // =============================================================================
 // THEME COLOR TESTS
@@ -51,7 +53,11 @@ fn test_theme_colors_valid_rgb() {
 
         // Verify values are valid (0-255)
         let (r, g, b) = rgb.unwrap();
-        assert!(r <= 255 && g <= 255 && b <= 255, "{} has invalid RGB values", name);
+        assert!(
+            r <= 255 && g <= 255 && b <= 255,
+            "{} has invalid RGB values",
+            name
+        );
     }
 }
 
@@ -191,7 +197,11 @@ fn test_layout_responsive_minimum_size() {
             assert_eq!(status.height, 1);
 
             // Content should fill remaining space
-            assert!(content.height >= 20, "Content area too small at {}h", content.height);
+            assert!(
+                content.height >= 20,
+                "Content area too small at {}h",
+                content.height
+            );
 
             // Width should span terminal
             assert_eq!(header.width, 80);
@@ -320,21 +330,21 @@ fn test_navigation_up_down() {
 #[test]
 fn test_navigation_enter_opens_detail() {
     let mut app = App::new();
-    assert_eq!(app.screen, AppScreen::Search);
+    assert_eq!(app.state, AppState::Home);
 
-    // Navigate to Browser (simulating search completion)
-    app.navigate(AppScreen::Browser);
-    assert_eq!(app.screen, AppScreen::Browser);
+    // Navigate to Search (simulating search start)
+    app.navigate(AppState::Search);
+    assert_eq!(app.state, AppState::Search);
     assert_eq!(app.nav_stack.len(), 1);
 
     // Press Enter on selected content -> opens Detail
-    app.navigate(AppScreen::Detail);
-    assert_eq!(app.screen, AppScreen::Detail);
+    app.navigate(AppState::Detail);
+    assert_eq!(app.state, AppState::Detail);
     assert_eq!(app.nav_stack.len(), 2);
 
     // Verify navigation stack
-    assert_eq!(app.nav_stack[0], AppScreen::Search);
-    assert_eq!(app.nav_stack[1], AppScreen::Browser);
+    assert_eq!(app.nav_stack[0], AppState::Home);
+    assert_eq!(app.nav_stack[1], AppState::Search);
 }
 
 /// Test Escape from detail returns to list
@@ -342,25 +352,25 @@ fn test_navigation_enter_opens_detail() {
 fn test_navigation_escape_returns() {
     let mut app = App::new();
 
-    // Set up: Search -> Browser -> Detail
-    app.navigate(AppScreen::Browser);
-    app.navigate(AppScreen::Detail);
-    assert_eq!(app.screen, AppScreen::Detail);
+    // Set up: Home -> Search -> Detail
+    app.navigate(AppState::Search);
+    app.navigate(AppState::Detail);
+    assert_eq!(app.state, AppState::Detail);
 
     // Press Escape
     let went_back = app.back();
     assert!(went_back);
-    assert_eq!(app.screen, AppScreen::Browser);
+    assert_eq!(app.state, AppState::Search);
 
     // Press Escape again
     let went_back = app.back();
     assert!(went_back);
-    assert_eq!(app.screen, AppScreen::Search);
+    assert_eq!(app.state, AppState::Home);
 
     // Press Escape at root - can't go further back
     let went_back = app.back();
     assert!(!went_back);
-    assert_eq!(app.screen, AppScreen::Search);
+    assert_eq!(app.state, AppState::Home);
 }
 
 /// Test navigation full cycle
@@ -368,24 +378,24 @@ fn test_navigation_escape_returns() {
 fn test_navigation_full_cycle() {
     let mut app = App::new();
 
-    // Search -> Browser -> Detail -> Subtitles -> NowPlaying
-    app.navigate(AppScreen::Browser);
-    app.navigate(AppScreen::Detail);
-    app.navigate(AppScreen::Subtitles);
-    app.navigate(AppScreen::NowPlaying);
+    // Home -> Search -> Detail -> Subtitles -> Playing
+    app.navigate(AppState::Search);
+    app.navigate(AppState::Detail);
+    app.navigate(AppState::Subtitles);
+    app.navigate(AppState::Playing);
 
-    assert_eq!(app.screen, AppScreen::NowPlaying);
+    assert_eq!(app.state, AppState::Playing);
     assert_eq!(app.nav_stack.len(), 4);
 
     // Go all the way back
     app.back();
-    assert_eq!(app.screen, AppScreen::Subtitles);
+    assert_eq!(app.state, AppState::Subtitles);
     app.back();
-    assert_eq!(app.screen, AppScreen::Detail);
+    assert_eq!(app.state, AppState::Detail);
     app.back();
-    assert_eq!(app.screen, AppScreen::Browser);
+    assert_eq!(app.state, AppState::Search);
     app.back();
-    assert_eq!(app.screen, AppScreen::Search);
+    assert_eq!(app.state, AppState::Home);
 
     assert_eq!(app.nav_stack.len(), 0);
 }
@@ -527,7 +537,14 @@ fn test_search_focus_escape_clears() {
 // =============================================================================
 
 /// Build a content card line similar to specs/tui.md format
-fn render_content_card(title: &str, year: Option<u16>, quality: Quality, size_bytes: Option<u64>, seeds: u32, selected: bool) -> Vec<Line<'static>> {
+fn render_content_card(
+    title: &str,
+    year: Option<u16>,
+    quality: Quality,
+    size_bytes: Option<u64>,
+    seeds: u32,
+    selected: bool,
+) -> Vec<Line<'static>> {
     let max_title_len = 30;
     let display_title = if title.len() > max_title_len {
         format!("{}...", &title[..max_title_len - 3])
@@ -551,7 +568,11 @@ fn render_content_card(title: &str, year: Option<u16>, quality: Quality, size_by
         Span::raw(prefix),
         Span::styled(
             format!("{}{}", display_title, year_str),
-            if selected { Theme::selected() } else { Theme::text() },
+            if selected {
+                Theme::selected()
+            } else {
+                Theme::text()
+            },
         ),
         Span::raw(" "),
         Span::styled(format!("{}", quality), Theme::quality_1080p()),
@@ -563,7 +584,16 @@ fn render_content_card(title: &str, year: Option<u16>, quality: Quality, size_by
         Span::raw("  "),
         Span::styled("Action, Crime • 2h 56m", Theme::dimmed()),
         Span::raw("    "),
-        Span::styled(format!("Seeds: {}", seeds), if seeds > 100 { Theme::seeds_high() } else if seeds > 20 { Theme::seeds_medium() } else { Theme::seeds_low() }),
+        Span::styled(
+            format!("Seeds: {}", seeds),
+            if seeds > 100 {
+                Theme::seeds_high()
+            } else if seeds > 20 {
+                Theme::seeds_medium()
+            } else {
+                Theme::seeds_low()
+            },
+        ),
     ]);
 
     vec![line1, line2]
@@ -604,7 +634,10 @@ fn test_content_card_render_truncate_long_title() {
     );
 
     let line1_str = lines[0].to_string();
-    assert!(line1_str.contains("..."), "Long title should be truncated with ellipsis");
+    assert!(
+        line1_str.contains("..."),
+        "Long title should be truncated with ellipsis"
+    );
     assert!(line1_str.len() < 100, "Line should be reasonable length");
 }
 
@@ -622,20 +655,16 @@ fn test_content_card_render_selected_highlight() {
 
     // First line should start with selection indicator
     let line1_str = lines[0].to_string();
-    assert!(line1_str.starts_with("▸"), "Selected item should have indicator");
+    assert!(
+        line1_str.starts_with("▸"),
+        "Selected item should have indicator"
+    );
 }
 
 /// Test missing year handled gracefully
 #[test]
 fn test_content_card_render_no_year() {
-    let lines = render_content_card(
-        "Unknown Movie",
-        None,
-        Quality::Unknown,
-        None,
-        0,
-        false,
-    );
+    let lines = render_content_card("Unknown Movie", None, Quality::Unknown, None, 0, false);
 
     let line1_str = lines[0].to_string();
     assert!(line1_str.contains("Unknown Movie"), "Should show title");
@@ -668,10 +697,7 @@ fn test_content_card_render_in_terminal() {
         },
     ];
 
-    let list_items: Vec<ListItem> = items
-        .iter()
-        .map(|r| ListItem::new(r.to_string()))
-        .collect();
+    let list_items: Vec<ListItem> = items.iter().map(|r| ListItem::new(r.to_string())).collect();
 
     let mut state = ListState::default();
     state.select(Some(0));
@@ -746,7 +772,10 @@ fn test_now_playing_overlay_centered() {
 
     // Should be horizontally centered
     let expected_x = (80 - overlay_width) / 2;
-    assert_eq!(overlay_rect.x, expected_x, "Should be horizontally centered");
+    assert_eq!(
+        overlay_rect.x, expected_x,
+        "Should be horizontally centered"
+    );
 
     // Should be vertically centered
     let expected_y = (24 - overlay_height) / 2;
@@ -767,7 +796,7 @@ fn test_now_playing_overlay_centered() {
 fn test_now_playing_overlay_progress_bar() {
     let state = NowPlayingState {
         title: "The Batman (2022)".to_string(),
-        position_secs: 2723, // 45:23
+        position_secs: 2723,  // 45:23
         duration_secs: 10560, // 2:56:00
         device_name: "Living Room TV".to_string(),
         is_paused: false,
@@ -815,12 +844,18 @@ fn test_now_playing_overlay_time_updates() {
 
     // After 1 hour
     state.position_secs = 3600;
-    assert_eq!(NowPlayingState::format_time(state.position_secs), "01:00:00");
+    assert_eq!(
+        NowPlayingState::format_time(state.position_secs),
+        "01:00:00"
+    );
     assert!((state.progress() - 0.5).abs() < 0.01);
 
     // After 1:45:30
     state.position_secs = 6330;
-    assert_eq!(NowPlayingState::format_time(state.position_secs), "01:45:30");
+    assert_eq!(
+        NowPlayingState::format_time(state.position_secs),
+        "01:45:30"
+    );
 }
 
 /// Test overlay responds to pause/stop commands
@@ -876,8 +911,7 @@ fn test_now_playing_overlay_full_render() {
             frame.render_widget(block, overlay_rect);
 
             // Title
-            let title_para = Paragraph::new(state.title.as_str())
-                .style(Theme::text());
+            let title_para = Paragraph::new(state.title.as_str()).style(Theme::text());
             frame.render_widget(title_para, Rect::new(inner.x, inner.y, inner.width, 1));
 
             // Progress bar
@@ -892,13 +926,13 @@ fn test_now_playing_overlay_full_render() {
             frame.render_widget(gauge, Rect::new(inner.x, inner.y + 2, inner.width, 1));
 
             // Device name
-            let device = Paragraph::new(format!("📺 {}", state.device_name))
-                .style(Theme::cast_target());
+            let device =
+                Paragraph::new(format!("📺 {}", state.device_name)).style(Theme::cast_target());
             frame.render_widget(device, Rect::new(inner.x, inner.y + 4, inner.width, 1));
 
             // Controls hint
-            let controls = Paragraph::new("[Space] Pause  [s] Stop  [Esc] Close")
-                .style(Theme::dimmed());
+            let controls =
+                Paragraph::new("[Space] Pause  [s] Stop  [Esc] Close").style(Theme::dimmed());
             frame.render_widget(controls, Rect::new(inner.x, inner.y + 5, inner.width, 1));
         })
         .unwrap();
@@ -907,9 +941,15 @@ fn test_now_playing_overlay_full_render() {
     let buffer = terminal.backend().buffer();
     let content: String = buffer.content.iter().map(|c| c.symbol()).collect();
 
-    assert!(content.contains("NOW CASTING"), "Should show NOW CASTING header");
+    assert!(
+        content.contains("NOW CASTING"),
+        "Should show NOW CASTING header"
+    );
     assert!(content.contains("The Batman"), "Should show title");
-    assert!(content.contains("Living Room TV"), "Should show device name");
+    assert!(
+        content.contains("Living Room TV"),
+        "Should show device name"
+    );
     assert!(content.contains("Pause"), "Should show pause hint");
     assert!(content.contains("Stop"), "Should show stop hint");
     assert!(content.contains("Esc"), "Should show escape hint");
@@ -926,7 +966,11 @@ fn test_now_playing_overlay_edge_cases() {
         device_name: "".to_string(),
         is_paused: false,
     };
-    assert_eq!(state.progress(), 0.0, "Zero duration should give 0 progress");
+    assert_eq!(
+        state.progress(),
+        0.0,
+        "Zero duration should give 0 progress"
+    );
 
     // Position > duration (shouldn't happen but handle gracefully)
     let over_state = NowPlayingState {
@@ -936,53 +980,56 @@ fn test_now_playing_overlay_edge_cases() {
         device_name: "".to_string(),
         is_paused: false,
     };
-    assert!(over_state.progress() > 1.0, "Over progress should be > 1.0 (not clamped here)");
+    assert!(
+        over_state.progress() > 1.0,
+        "Over progress should be > 1.0 (not clamped here)"
+    );
 }
 
 // =============================================================================
 // INTEGRATION TESTS
 // =============================================================================
 
-/// Test complete UI flow: Search -> Results -> Detail -> NowPlaying
+/// Test complete UI flow: Home -> Search -> Detail -> Playing
 #[test]
 fn test_ui_flow_integration() {
     let mut app = App::new();
     let mut search = SearchState::new();
 
-    // 1. Start at search screen
-    assert_eq!(app.screen, AppScreen::Search);
+    // 1. Start at home screen
+    assert_eq!(app.state, AppState::Home);
 
-    // 2. Focus search with '/'
+    // 2. Navigate to Search
+    app.navigate(AppState::Search);
+    assert_eq!(app.state, AppState::Search);
+
+    // 3. Focus search with '/'
     search.focus();
     assert!(search.focused);
 
-    // 3. Type query
+    // 4. Type query
     search.type_str("batman");
     assert_eq!(search.query, "batman");
 
-    // 4. Submit with Enter
+    // 5. Submit with Enter
     let query = search.submit();
     assert_eq!(query, Some("batman".to_string()));
 
-    // 5. Navigate to Browser (search completed)
-    app.navigate(AppScreen::Browser);
-    assert_eq!(app.screen, AppScreen::Browser);
-
     // 6. Select item and press Enter -> Detail
-    app.navigate(AppScreen::Detail);
-    assert_eq!(app.screen, AppScreen::Detail);
+    app.navigate(AppState::Detail);
+    assert_eq!(app.state, AppState::Detail);
 
-    // 7. Select source and cast -> NowPlaying
-    app.navigate(AppScreen::NowPlaying);
-    assert_eq!(app.screen, AppScreen::NowPlaying);
+    // 7. Select source and cast -> Playing
+    app.navigate(AppState::Playing);
+    assert_eq!(app.state, AppState::Playing);
 
     // 8. Press Escape to go back through screens
     app.back();
-    assert_eq!(app.screen, AppScreen::Detail);
+    assert_eq!(app.state, AppState::Detail);
     app.back();
-    assert_eq!(app.screen, AppScreen::Browser);
+    assert_eq!(app.state, AppState::Search);
     app.back();
-    assert_eq!(app.screen, AppScreen::Search);
+    assert_eq!(app.state, AppState::Home);
 
     // 9. Can't go back further
     let went_back = app.back();

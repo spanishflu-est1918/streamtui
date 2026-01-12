@@ -66,7 +66,11 @@ pub struct SeasonSummary {
 impl fmt::Display for SeasonSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = self.name.as_deref().unwrap_or("Season");
-        write!(f, "{} {} ({} episodes)", name, self.season_number, self.episode_count)
+        write!(
+            f,
+            "{} {} ({} episodes)",
+            name, self.season_number, self.episode_count
+        )
     }
 }
 
@@ -147,12 +151,13 @@ impl fmt::Display for Episode {
 // =============================================================================
 
 /// Video quality classification
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Quality {
     UHD4K,
     FHD1080p,
     HD720p,
     SD480p,
+    #[default]
     Unknown,
 }
 
@@ -197,12 +202,6 @@ impl fmt::Display for Quality {
     }
 }
 
-impl Default for Quality {
-    fn default() -> Self {
-        Quality::Unknown
-    }
-}
-
 impl Ord for Quality {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.rank().cmp(&other.rank())
@@ -243,7 +242,10 @@ impl StreamSource {
         let re = regex::Regex::new(r"👤\s*(\d+(?:\.\d+)?)\s*(k)?").ok();
         if let Some(re) = re {
             if let Some(caps) = re.captures(title) {
-                let num: f32 = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                let num: f32 = caps
+                    .get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0.0);
                 let multiplier = if caps.get(2).is_some() { 1000.0 } else { 1.0 };
                 return (num * multiplier) as u32;
             }
@@ -253,7 +255,10 @@ impl StreamSource {
         let re_seeds = regex::Regex::new(r"seeds?:\s*(\d+)").ok();
         if let Some(re) = re_seeds {
             if let Some(caps) = re.captures(&title.to_lowercase()) {
-                return caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+                return caps
+                    .get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0);
             }
         }
 
@@ -393,7 +398,10 @@ impl TorrentSession {
         let re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*(GB|MB)").ok();
         if let Some(re) = re {
             if let Some(caps) = re.captures(downloaded_str) {
-                let num: f64 = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                let num: f64 = caps
+                    .get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0.0);
                 let unit = caps.get(2).map(|m| m.as_str()).unwrap_or("MB");
                 let downloaded = match unit {
                     "GB" => (num * 1024.0 * 1024.0 * 1024.0) as u64,
@@ -411,7 +419,10 @@ impl TorrentSession {
         let re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*(MB|KB)/s").ok();
         if let Some(re) = re {
             if let Some(caps) = re.captures(speed_str) {
-                let num: f64 = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                let num: f64 = caps
+                    .get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0.0);
                 let unit = caps.get(2).map(|m| m.as_str()).unwrap_or("MB");
                 return match unit {
                     "MB" => (num * 1024.0 * 1024.0) as u64,
@@ -874,7 +885,10 @@ mod tests {
     fn test_quality_from_str_1080p() {
         assert_eq!(Quality::from_str_loose("1080p"), Quality::FHD1080p);
         assert_eq!(Quality::from_str_loose("FHD"), Quality::FHD1080p);
-        assert_eq!(Quality::from_str_loose("Torrentio\n1080p"), Quality::FHD1080p);
+        assert_eq!(
+            Quality::from_str_loose("Torrentio\n1080p"),
+            Quality::FHD1080p
+        );
     }
 
     #[test]
@@ -1010,9 +1024,15 @@ mod tests {
     #[test]
     fn test_torrent_state_display() {
         assert_eq!(TorrentState::Starting.to_string(), "Starting...");
-        assert_eq!(TorrentState::Connecting.to_string(), "Connecting to peers...");
+        assert_eq!(
+            TorrentState::Connecting.to_string(),
+            "Connecting to peers..."
+        );
         assert_eq!(TorrentState::Streaming.to_string(), "Streaming");
-        assert_eq!(TorrentState::Error("No peers".to_string()).to_string(), "Error: No peers");
+        assert_eq!(
+            TorrentState::Error("No peers".to_string()).to_string(),
+            "Error: No peers"
+        );
     }
 
     #[test]
@@ -1074,7 +1094,10 @@ mod tests {
             port: 8009,
             model: Some("Chromecast Ultra".to_string()),
         };
-        assert_eq!(device.to_string(), "Living Room TV (Chromecast Ultra) - 192.168.1.50");
+        assert_eq!(
+            device.to_string(),
+            "Living Room TV (Chromecast Ultra) - 192.168.1.50"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1085,7 +1108,10 @@ mod tests {
     fn test_cast_state_from_catt() {
         assert_eq!(CastState::from_catt_state("PLAYING"), CastState::Playing);
         assert_eq!(CastState::from_catt_state("PAUSED"), CastState::Paused);
-        assert_eq!(CastState::from_catt_state("BUFFERING"), CastState::Buffering);
+        assert_eq!(
+            CastState::from_catt_state("BUFFERING"),
+            CastState::Buffering
+        );
         assert_eq!(CastState::from_catt_state("IDLE"), CastState::Idle);
         assert_eq!(CastState::from_catt_state("playing"), CastState::Playing); // case insensitive
     }
@@ -1227,11 +1253,8 @@ mod tests {
 
     #[test]
     fn test_subtitle_url_generation() {
-        let url = SubtitleFile::generate_url(
-            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)),
-            8889,
-            "en",
-        );
+        let url =
+            SubtitleFile::generate_url(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 8889, "en");
         assert_eq!(url, "http://192.168.1.100:8889/subtitles/en.vtt");
     }
 
@@ -1285,8 +1308,18 @@ mod tests {
             name: "Breaking Bad".to_string(),
             year: 2008,
             seasons: vec![
-                SeasonSummary { season_number: 1, episode_count: 7, name: None, air_date: None },
-                SeasonSummary { season_number: 2, episode_count: 13, name: None, air_date: None },
+                SeasonSummary {
+                    season_number: 1,
+                    episode_count: 7,
+                    name: None,
+                    air_date: None,
+                },
+                SeasonSummary {
+                    season_number: 2,
+                    episode_count: 13,
+                    name: None,
+                    air_date: None,
+                },
             ],
             genres: vec!["Drama".to_string()],
             overview: "".to_string(),

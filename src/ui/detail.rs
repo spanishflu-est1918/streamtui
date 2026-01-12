@@ -5,7 +5,7 @@
 
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, BorderType, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::models::{
@@ -136,7 +136,10 @@ impl DetailView {
 
     /// Check if displaying a TV show
     pub fn is_tv(&self) -> bool {
-        self.media.as_ref().map(|m| m.media_type == MediaType::Tv).unwrap_or(false)
+        self.media
+            .as_ref()
+            .map(|m| m.media_type == MediaType::Tv)
+            .unwrap_or(false)
     }
 
     /// Get title for display
@@ -411,9 +414,7 @@ impl DetailView {
             Theme::error()
         };
 
-        let mut meta_spans = vec![
-            Span::styled(format!("★ {:.1}", rating), rating_style),
-        ];
+        let mut meta_spans = vec![Span::styled(format!("★ {:.1}", rating), rating_style)];
 
         if let Some(runtime) = self.runtime_str() {
             meta_spans.push(Span::styled(" │ ", Theme::dimmed()));
@@ -504,7 +505,11 @@ impl DetailView {
                 let line = Line::from(vec![
                     Span::styled(
                         marker.to_string(),
-                        if is_selected { Theme::accent() } else { Theme::dimmed() },
+                        if is_selected {
+                            Theme::accent()
+                        } else {
+                            Theme::dimmed()
+                        },
                     ),
                     Span::styled(
                         format!("{} {}", name, season.season_number),
@@ -516,7 +521,11 @@ impl DetailView {
                     ),
                     Span::styled(
                         format!(" ({} eps)", season.episode_count),
-                        if is_selected { Theme::accent() } else { Theme::dimmed() },
+                        if is_selected {
+                            Theme::accent()
+                        } else {
+                            Theme::dimmed()
+                        },
                     ),
                 ]);
 
@@ -577,11 +586,19 @@ impl DetailView {
                 let line = Line::from(vec![
                     Span::styled(
                         marker.to_string(),
-                        if is_selected { Theme::accent() } else { Theme::dimmed() },
+                        if is_selected {
+                            Theme::accent()
+                        } else {
+                            Theme::dimmed()
+                        },
                     ),
                     Span::styled(
                         format!("S{:02}E{:02}", ep.season, ep.episode),
-                        if is_selected { Theme::secondary() } else { Theme::secondary() },
+                        if is_selected {
+                            Theme::accent()
+                        } else {
+                            Theme::secondary()
+                        },
                     ),
                     Span::styled(" - ", Theme::dimmed()),
                     Span::styled(
@@ -679,12 +696,20 @@ impl DetailView {
         let line = Line::from(vec![
             Span::styled(
                 hotkey,
-                if is_selected { Theme::accent() } else { Theme::keybind() },
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::keybind()
+                },
             ),
             Span::styled(format!("{:<6}", source.quality.to_string()), quality_style),
             Span::styled(
                 format!("{:>7}", source.format_size()),
-                if is_selected { Theme::accent() } else { Theme::file_size() },
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::file_size()
+                },
             ),
             Span::raw(" "),
             Span::styled(format!("👤{:<4}", source.seeds), seeds_style),

@@ -11,19 +11,19 @@
 //! - `ui` - TUI components
 //! - `app` - Application state and navigation
 
-pub mod models;
+// Allow dead code for TUI components and models prepared for future interactive mode
+#![allow(dead_code)]
+
 pub mod api;
+pub mod app;
+pub mod models;
 pub mod stream;
 pub mod ui;
-pub mod app;
 
 // Re-export commonly used types
 pub use models::{
-    Quality, StreamSource, SearchResult, MediaType,
-    MovieDetail, TvDetail, Episode,
-    TorrentSession, TorrentState,
-    CastDevice, CastState, PlaybackStatus,
-    SubtitleResult, SubtitleFile, SubFormat,
+    CastDevice, CastState, Episode, MediaType, MovieDetail, PlaybackStatus, Quality, SearchResult,
+    StreamSource, SubFormat, SubtitleFile, SubtitleResult, TorrentSession, TorrentState, TvDetail,
 };
 
 pub use api::{TmdbClient, TorrentioClient};

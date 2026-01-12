@@ -174,7 +174,9 @@ impl BrowserView {
         if self.selected < self.offset {
             self.offset = self.selected;
         } else if self.selected >= self.offset + visible_height {
-            self.offset = self.selected.saturating_sub(visible_height.saturating_sub(1));
+            self.offset = self
+                .selected
+                .saturating_sub(visible_height.saturating_sub(1));
         }
     }
 
@@ -182,7 +184,7 @@ impl BrowserView {
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         // Calculate visible height (minus borders)
         let visible_height = area.height.saturating_sub(2) as usize;
-        
+
         // Adjust offset for scroll
         self.adjust_offset(visible_height);
 
@@ -209,7 +211,12 @@ impl BrowserView {
             Theme::border()
         };
 
-        let title = format!(" {} ({}/{}) ", self.title, self.selected + 1, self.items.len());
+        let title = format!(
+            " {} ({}/{}) ",
+            self.title,
+            self.selected + 1,
+            self.items.len()
+        );
 
         let list = List::new(items)
             .block(
@@ -231,11 +238,9 @@ impl BrowserView {
 
         // Format: ▸ Title (Year)                    [TYPE] ★ 8.5
         let marker = if is_selected { "▸ " } else { "  " };
-        
-        let year_str = item.year
-            .map(|y| format!(" ({})", y))
-            .unwrap_or_default();
-        
+
+        let year_str = item.year.map(|y| format!(" ({})", y)).unwrap_or_default();
+
         let type_str = match item.media_type {
             MediaType::Movie => "MOVIE",
             MediaType::Tv => "TV",
@@ -245,25 +250,41 @@ impl BrowserView {
         let line = Line::from(vec![
             Span::styled(
                 marker.to_string(),
-                if is_selected { Theme::accent() } else { Theme::dimmed() }
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::dimmed()
+                },
             ),
             Span::styled(
                 item.title.clone(),
-                if is_selected { Theme::list_item_selected() } else { Theme::text() }
+                if is_selected {
+                    Theme::list_item_selected()
+                } else {
+                    Theme::text()
+                },
             ),
             Span::styled(
                 year_str,
-                if is_selected { Theme::accent() } else { Theme::year() }
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::year()
+                },
             ),
             Span::raw(" "),
             Span::styled(
                 format!("[{}]", type_str),
-                if is_selected { Theme::accent() } else { Theme::secondary() }
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::secondary()
+                },
             ),
             Span::raw(" "),
             Span::styled(
                 format!("★ {:.1}", item.vote_average),
-                Self::rating_style(item.vote_average, is_selected)
+                Self::rating_style(item.vote_average, is_selected),
             ),
         ]);
 
@@ -363,12 +384,14 @@ impl SourceBrowserView {
     /// Render the source browser
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let visible_height = area.height.saturating_sub(2) as usize;
-        
+
         // Adjust offset
         if self.selected < self.offset {
             self.offset = self.selected;
         } else if self.selected >= self.offset + visible_height {
-            self.offset = self.selected.saturating_sub(visible_height.saturating_sub(1));
+            self.offset = self
+                .selected
+                .saturating_sub(visible_height.saturating_sub(1));
         }
 
         if self.items.is_empty() {
@@ -403,14 +426,13 @@ impl SourceBrowserView {
 
         let title = format!(" SOURCES ({}/{}) ", self.selected + 1, self.items.len());
 
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(border_style)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title(Span::styled(title, Theme::title())),
-            );
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .title(Span::styled(title, Theme::title())),
+        );
 
         frame.render_widget(list, area);
     }
@@ -429,7 +451,8 @@ impl SourceBrowserView {
         let seeds_style = Self::seeds_style(source.seeds, is_selected);
 
         // Truncate title to first line/reasonable length
-        let title_display: String = source.title
+        let title_display: String = source
+            .title
             .lines()
             .next()
             .unwrap_or(&source.title)
@@ -440,26 +463,32 @@ impl SourceBrowserView {
         let line = Line::from(vec![
             Span::styled(
                 hotkey,
-                if is_selected { Theme::accent() } else { Theme::keybind() }
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::keybind()
+                },
             ),
-            Span::styled(
-                format!("{:<6}", source.quality.to_string()),
-                quality_style
-            ),
+            Span::styled(format!("{:<6}", source.quality.to_string()), quality_style),
             Span::styled(
                 title_display,
-                if is_selected { Theme::list_item_selected() } else { Theme::text() }
+                if is_selected {
+                    Theme::list_item_selected()
+                } else {
+                    Theme::text()
+                },
             ),
             Span::raw(" "),
             Span::styled(
                 format!("{:>8}", source.format_size()),
-                if is_selected { Theme::accent() } else { Theme::file_size() }
+                if is_selected {
+                    Theme::accent()
+                } else {
+                    Theme::file_size()
+                },
             ),
             Span::raw(" "),
-            Span::styled(
-                format!("👤{}", source.seeds),
-                seeds_style
-            ),
+            Span::styled(format!("👤{}", source.seeds), seeds_style),
         ]);
 
         ListItem::new(line)
@@ -716,7 +745,7 @@ mod tests {
         view.set_items(sample_results());
         view.selected = 2;
         view.offset = 2;
-        
+
         view.up();
         // Should adjust offset when going above visible
         assert!(view.offset <= view.selected);

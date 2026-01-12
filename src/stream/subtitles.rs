@@ -4,10 +4,10 @@
 //! Handles SRT to WebVTT conversion for Chromecast.
 //! Caches downloaded subtitles in ~/.cache/streamtui/subtitles/
 
+use crate::models::{SubFormat, SubtitleResult};
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
-use crate::models::{SubtitleResult, SubFormat};
 
 /// OpenSubtitles API client
 pub struct SubtitleClient {
@@ -74,7 +74,7 @@ impl SubtitleClient {
             .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join("streamtui")
             .join("subtitles");
-        
+
         Self {
             base_url: "https://api.opensubtitles.com/api/v1".to_string(),
             api_key: None,
@@ -96,7 +96,7 @@ impl SubtitleClient {
             .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join("streamtui")
             .join("subtitles");
-        
+
         Self {
             base_url: base_url.into(),
             api_key: None,
@@ -106,55 +106,59 @@ impl SubtitleClient {
     }
 
     /// Search for subtitles by IMDB ID
-    /// 
+    ///
     /// # Arguments
     /// * `imdb_id` - IMDB ID (with or without "tt" prefix)
     /// * `language` - Optional language code (e.g., "en", "es")
-    pub async fn search(&self, imdb_id: &str, language: Option<&str>) -> Result<Vec<SubtitleResult>> {
+    pub async fn search(
+        &self,
+        imdb_id: &str,
+        language: Option<&str>,
+    ) -> Result<Vec<SubtitleResult>> {
         // Strip "tt" prefix and convert to number to remove leading zeros
         let imdb_num = imdb_id
             .trim_start_matches("tt")
             .parse::<u64>()
             .map(|n| n.to_string())
             .unwrap_or_else(|_| imdb_id.trim_start_matches("tt").to_string());
-        
+
         let mut url = format!("{}/subtitles?imdb_id={}", self.base_url, imdb_num);
-        
+
         if let Some(lang) = language {
             url.push_str(&format!("&languages={}", lang));
         }
-        
+
         let mut request = self.client.get(&url);
-        
+
         // Add API key header if present
         if let Some(ref api_key) = self.api_key {
             request = request.header("Api-Key", api_key);
         }
-        
+
         let response = request.send().await?;
-        
+
         // Handle rate limiting (429)
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(anyhow!("Rate limit exceeded (429 Too Many Requests)"));
         }
-        
+
         // Handle 404
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(anyhow!("Not found (404)"));
         }
-        
+
         // Handle other errors
         if !response.status().is_success() {
             return Err(anyhow!("API error: {}", response.status()));
         }
-        
+
         let api_response: OpenSubtitlesResponse = response.json().await?;
-        
+
         Ok(self.convert_response(api_response))
     }
 
     /// Search for TV episode subtitles
-    /// 
+    ///
     /// # Arguments
     /// * `imdb_id` - IMDB ID of the TV show
     /// * `season` - Season number
@@ -173,70 +177,77 @@ impl SubtitleClient {
             .parse::<u64>()
             .map(|n| n.to_string())
             .unwrap_or_else(|_| imdb_id.trim_start_matches("tt").to_string());
-        
+
         let mut url = format!(
             "{}/subtitles?imdb_id={}&season_number={}&episode_number={}",
             self.base_url, imdb_num, season, episode
         );
-        
+
         if let Some(lang) = language {
             url.push_str(&format!("&languages={}", lang));
         }
-        
+
         let mut request = self.client.get(&url);
-        
+
         if let Some(ref api_key) = self.api_key {
             request = request.header("Api-Key", api_key);
         }
-        
+
         let response = request.send().await?;
-        
+
         // Handle rate limiting
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(anyhow!("Rate limit exceeded (429 Too Many Requests)"));
         }
-        
+
         if !response.status().is_success() {
             return Err(anyhow!("API error: {}", response.status()));
         }
-        
+
         let api_response: OpenSubtitlesResponse = response.json().await?;
-        
+
         Ok(self.convert_response(api_response))
     }
 
     /// Convert OpenSubtitles API response to our model
     fn convert_response(&self, response: OpenSubtitlesResponse) -> Vec<SubtitleResult> {
-        response.data.into_iter().filter_map(|entry| {
-            // Get the first file (main subtitle file)
-            let file = entry.attributes.files.first()?;
-            
-            // Determine format from filename
-            let format = entry.attributes.files.first()
-                .map(|f| {
-                    let ext = f.file_name.rsplit('.').next().unwrap_or("srt");
-                    SubFormat::from_extension(ext)
+        response
+            .data
+            .into_iter()
+            .filter_map(|entry| {
+                // Get the first file (main subtitle file)
+                let file = entry.attributes.files.first()?;
+
+                // Determine format from filename
+                let format = entry
+                    .attributes
+                    .files
+                    .first()
+                    .map(|f| {
+                        let ext = f.file_name.rsplit('.').next().unwrap_or("srt");
+                        SubFormat::from_extension(ext)
+                    })
+                    .unwrap_or(SubFormat::Srt);
+
+                Some(SubtitleResult {
+                    id: entry.id,
+                    file_id: file.file_id,
+                    language: entry.attributes.language.clone(),
+                    language_name: language_code_to_name(&entry.attributes.language),
+                    release: entry.attributes.release,
+                    fps: entry.attributes.fps,
+                    format,
+                    downloads: entry.attributes.download_count,
+                    from_trusted: entry.attributes.from_trusted,
+                    hearing_impaired: entry.attributes.hearing_impaired,
+                    ai_translated: entry.attributes.ai_translated,
                 })
-                .unwrap_or(SubFormat::Srt);
-            
-            Some(SubtitleResult {
-                id: entry.id,
-                file_id: file.file_id,
-                language: entry.attributes.language.clone(),
-                language_name: language_code_to_name(&entry.attributes.language),
-                release: entry.attributes.release,
-                fps: entry.attributes.fps,
-                format,
-                downloads: entry.attributes.download_count,
-                from_trusted: entry.attributes.from_trusted,
-                hearing_impaired: entry.attributes.hearing_impaired,
-                ai_translated: entry.attributes.ai_translated,
             })
-        }).collect()
+            .collect()
     }
 
     /// Download subtitle and return WebVTT content
-    /// 
+    ///
     /// Downloads the subtitle file, converts to WebVTT if needed,
     /// and caches the result.
     pub async fn download(&self, subtitle: &SubtitleResult) -> Result<String> {
@@ -246,46 +257,45 @@ impl SubtitleClient {
             let content = std::fs::read_to_string(&cache_path)?;
             return Ok(content);
         }
-        
+
         // Request download link from OpenSubtitles
         let url = format!("{}/download", self.base_url);
         let body = serde_json::json!({
             "file_id": subtitle.file_id
         });
-        
-        let mut request = self.client.post(&url)
-            .json(&body);
-        
+
+        let mut request = self.client.post(&url).json(&body);
+
         if let Some(ref api_key) = self.api_key {
             request = request.header("Api-Key", api_key);
         }
-        
+
         let response = request.send().await?;
-        
+
         if !response.status().is_success() {
             return Err(anyhow!("Download API error: {}", response.status()));
         }
-        
+
         let download_info: DownloadResponse = response.json().await?;
-        
+
         // Download the actual subtitle file
         let subtitle_response = self.client.get(&download_info.link).send().await?;
-        
+
         if !subtitle_response.status().is_success() {
             return Err(anyhow!("Failed to download subtitle file"));
         }
-        
+
         let srt_content = subtitle_response.text().await?;
-        
+
         // Convert to WebVTT
         let webvtt_content = Self::srt_to_webvtt(&srt_content);
-        
+
         // Cache the result
         if let Some(parent) = cache_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&cache_path, &webvtt_content)?;
-        
+
         Ok(webvtt_content)
     }
 
@@ -302,13 +312,13 @@ impl SubtitleClient {
     }
 
     /// Convert SRT content to WebVTT format
-    /// 
+    ///
     /// WebVTT is required for Chromecast subtitle playback.
     /// This converts SRT timestamps (00:00:00,000) to WebVTT format (00:00:00.000)
     /// and adds the required WEBVTT header.
     pub fn srt_to_webvtt(srt: &str) -> String {
         let mut webvtt = String::from("WEBVTT\n\n");
-        
+
         // Process line by line, only converting timestamps (not dialogue text)
         for line in srt.lines() {
             let converted = if line.contains(" --> ") {
@@ -321,7 +331,7 @@ impl SubtitleClient {
             webvtt.push_str(&converted);
             webvtt.push('\n');
         }
-        
+
         webvtt
     }
 }

@@ -548,9 +548,13 @@ async fn test_handles_not_found() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     // Should be a NotFound error, not a panic
-    assert!(err.to_string().to_lowercase().contains("not found") || 
-            err.to_string().contains("404") ||
-            err.downcast_ref::<streamtui::api::tmdb::TmdbError>().is_some());
+    assert!(
+        err.to_string().to_lowercase().contains("not found")
+            || err.to_string().contains("404")
+            || err
+                .downcast_ref::<streamtui::api::tmdb::TmdbError>()
+                .is_some()
+    );
 }
 
 #[tokio::test]

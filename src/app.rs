@@ -11,9 +11,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 // =============================================================================
 
 /// Application state enum representing current screen
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum AppState {
     /// Home screen with search box and trending content
+    #[default]
     Home,
     /// Search results view
     Search,
@@ -25,12 +26,6 @@ pub enum AppState {
     Subtitles,
     /// Now playing overlay (cast in progress)
     Playing,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        AppState::Home
-    }
 }
 
 // =============================================================================
@@ -52,20 +47,15 @@ pub enum InputMode {
 // =============================================================================
 
 /// Loading state for async operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum LoadingState {
     /// Idle - no loading in progress
+    #[default]
     Idle,
     /// Loading with optional message
     Loading(Option<String>),
     /// Error with message
     Error(String),
-}
-
-impl Default for LoadingState {
-    fn default() -> Self {
-        LoadingState::Idle
-    }
 }
 
 impl LoadingState {
@@ -1102,10 +1092,16 @@ mod tests {
 
         // Space toggles pause
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()));
-        assert_eq!(app.playing.playback.as_ref().unwrap().state, CastState::Paused);
+        assert_eq!(
+            app.playing.playback.as_ref().unwrap().state,
+            CastState::Paused
+        );
 
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()));
-        assert_eq!(app.playing.playback.as_ref().unwrap().state, CastState::Playing);
+        assert_eq!(
+            app.playing.playback.as_ref().unwrap().state,
+            CastState::Playing
+        );
     }
 
     #[test]

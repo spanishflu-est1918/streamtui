@@ -3,8 +3,8 @@
 //! Discovers Chromecast devices and controls playback using catt.
 //! catt provides a simpler interface than native Cast protocol.
 
-use anyhow::Result;
 use crate::models::{CastDevice, PlaybackStatus};
+use anyhow::Result;
 
 /// Chromecast manager using catt CLI
 pub struct CastManager {

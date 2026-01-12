@@ -7,7 +7,6 @@ use std::net::IpAddr;
 use std::process::Stdio;
 use std::sync::Arc;
 
-
 use anyhow::Result;
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -165,7 +164,9 @@ pub async fn check_webtorrent_installed() -> Result<(), String> {
 
     match result {
         Ok(status) if status.success() => Ok(()),
-        _ => Err("webtorrent-cli not found. Install with: npm install -g webtorrent-cli".to_string()),
+        _ => {
+            Err("webtorrent-cli not found. Install with: npm install -g webtorrent-cli".to_string())
+        }
     }
 }
 
@@ -178,7 +179,8 @@ mod tests {
     use super::*;
 
     // Valid test magnet (Big Buck Bunny - public domain)
-    const VALID_MAGNET: &str = "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny";
+    const VALID_MAGNET: &str =
+        "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny";
 
     // ------------------------------------------------------------------------
     // test_magnet_validation
@@ -224,7 +226,9 @@ mod tests {
 
     #[test]
     fn test_magnet_validation_non_hex_infohash() {
-        let result = validate_magnet("magnet:?xt=urn:btih:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&dn=BadHex");
+        let result = validate_magnet(
+            "magnet:?xt=urn:btih:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&dn=BadHex",
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("hexadecimal"));
     }
@@ -591,8 +595,7 @@ mod tests {
 
         // The error message should be clear
         if !is_installed {
-            let error_msg =
-                "webtorrent-cli not found. Install with: npm install -g webtorrent-cli";
+            let error_msg = "webtorrent-cli not found. Install with: npm install -g webtorrent-cli";
             assert!(error_msg.contains("webtorrent-cli not found"));
             assert!(error_msg.contains("npm install"));
         }
@@ -626,7 +629,8 @@ mod tests {
     #[tokio::test]
     async fn test_handles_connection_failure() {
         // Simulate a connection failure with invalid/dead magnet
-        let dead_magnet = "magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn=DeadTorrent";
+        let dead_magnet =
+            "magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn=DeadTorrent";
 
         let manager = MockTorrentManager::new();
         let session = manager.start(dead_magnet, None).await.unwrap();

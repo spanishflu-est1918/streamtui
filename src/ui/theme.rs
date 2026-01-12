@@ -151,9 +151,7 @@ impl Theme {
 
     /// Progress bar unfilled portion
     pub fn progress_bar_empty() -> Style {
-        Style::default()
-            .fg(Self::DIM)
-            .bg(Self::BACKGROUND_LIGHT)
+        Style::default().fg(Self::DIM).bg(Self::BACKGROUND_LIGHT)
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -201,16 +199,12 @@ impl Theme {
 
     /// Style for input fields
     pub fn input() -> Style {
-        Style::default()
-            .fg(Self::TEXT)
-            .bg(Self::BACKGROUND_LIGHT)
+        Style::default().fg(Self::TEXT).bg(Self::BACKGROUND_LIGHT)
     }
 
     /// Style for input cursor
     pub fn input_cursor() -> Style {
-        Style::default()
-            .fg(Self::BACKGROUND)
-            .bg(Self::PRIMARY)
+        Style::default().fg(Self::BACKGROUND).bg(Self::PRIMARY)
     }
 
     /// Keybinding hint style
@@ -225,9 +219,7 @@ impl Theme {
 
     /// Status bar style
     pub fn status_bar() -> Style {
-        Style::default()
-            .fg(Self::TEXT)
-            .bg(Self::BACKGROUND_LIGHT)
+        Style::default().fg(Self::TEXT).bg(Self::BACKGROUND_LIGHT)
     }
 
     /// Cast target indicator

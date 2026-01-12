@@ -15,6 +15,9 @@
 //! streamtui status --json
 //! ```
 
+// Allow dead code for TUI components and models prepared for future interactive mode
+#![allow(dead_code)]
+
 mod app;
 mod cli;
 mod commands;
@@ -39,7 +42,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Clear, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
     Frame, Terminal,
 };
 
@@ -97,6 +100,10 @@ async fn run_cli(cli: Cli) -> ExitCode {
                 return output.error(e, ExitCode::InvalidArgs);
             }
             commands::cast_cmd(cmd, device, &output).await
+        }
+
+        Some(Command::CastMagnet(cmd)) => {
+            commands::cast_magnet_cmd(cmd, device, &output).await
         }
 
         Some(Command::Status(cmd)) => commands::status_cmd(cmd, device, &output).await,
@@ -230,8 +237,18 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
     // Logo
     let logo = Paragraph::new(Line::from(vec![
-        Span::styled("STREAM", ratatui::style::Style::default().fg(Theme::PRIMARY).add_modifier(Modifier::BOLD)),
-        Span::styled("TUI", ratatui::style::Style::default().fg(Theme::SECONDARY).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "STREAM",
+            ratatui::style::Style::default()
+                .fg(Theme::PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "TUI",
+            ratatui::style::Style::default()
+                .fg(Theme::SECONDARY)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]))
     .alignment(Alignment::Center)
     .block(
@@ -304,10 +321,18 @@ fn render_home(frame: &mut Frame, area: Rect, _app: &App) {
         Line::from(""),
         Line::from(vec![
             Span::styled("Welcome to ", Theme::text()),
-            Span::styled("StreamTUI", ratatui::style::Style::default().fg(Theme::PRIMARY).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "StreamTUI",
+                ratatui::style::Style::default()
+                    .fg(Theme::PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Your neon-soaked streaming companion", Theme::dimmed())),
+        Line::from(Span::styled(
+            "Your neon-soaked streaming companion",
+            Theme::dimmed(),
+        )),
         Line::from(""),
         Line::from(""),
         Line::from(Span::styled("Quick Start:", Theme::accent())),
@@ -386,11 +411,19 @@ fn render_search_results(frame: &mut Frame, area: Rect, app: &App) {
             let line = Line::from(vec![
                 Span::styled(
                     marker,
-                    if is_selected { Theme::accent() } else { Theme::dimmed() },
+                    if is_selected {
+                        Theme::accent()
+                    } else {
+                        Theme::dimmed()
+                    },
                 ),
                 Span::styled(
                     &result.title,
-                    if is_selected { Theme::highlighted() } else { Theme::text() },
+                    if is_selected {
+                        Theme::highlighted()
+                    } else {
+                        Theme::text()
+                    },
                 ),
                 Span::styled(year_str, Theme::year()),
                 Span::raw(" "),
@@ -418,11 +451,7 @@ fn render_search_results(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render detail view (movie or TV show)
 fn render_detail(frame: &mut Frame, area: Rect, app: &App) {
-    let title = app
-        .detail
-        .as_ref()
-        .map(|d| d.title())
-        .unwrap_or("DETAIL");
+    let title = app.detail.as_ref().map(|d| d.title()).unwrap_or("DETAIL");
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -512,16 +541,21 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
             let line = Line::from(vec![
                 Span::styled(
                     marker,
-                    if is_selected { Theme::accent() } else { Theme::dimmed() },
+                    if is_selected {
+                        Theme::accent()
+                    } else {
+                        Theme::dimmed()
+                    },
                 ),
-                Span::styled(
-                    format!("{:6}", source.quality),
-                    quality_style,
-                ),
+                Span::styled(format!("{:6}", source.quality), quality_style),
                 Span::raw(" "),
                 Span::styled(
                     &source.title,
-                    if is_selected { Theme::highlighted() } else { Theme::text() },
+                    if is_selected {
+                        Theme::highlighted()
+                    } else {
+                        Theme::text()
+                    },
                 ),
                 Span::raw(" "),
                 Span::styled(source.format_size(), Theme::file_size()),
@@ -580,11 +614,19 @@ fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
             let line = Line::from(vec![
                 Span::styled(
                     marker,
-                    if is_selected { Theme::accent() } else { Theme::dimmed() },
+                    if is_selected {
+                        Theme::accent()
+                    } else {
+                        Theme::dimmed()
+                    },
                 ),
                 Span::styled(
                     &sub.language,
-                    if is_selected { Theme::highlighted() } else { Theme::text() },
+                    if is_selected {
+                        Theme::highlighted()
+                    } else {
+                        Theme::text()
+                    },
                 ),
                 Span::raw(" "),
                 Span::styled(&sub.release, Theme::dimmed()),
@@ -610,11 +652,15 @@ fn render_playing(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(block, area);
 
     let playback = app.playing.playback.as_ref();
-    
+
     let content: Vec<Line> = if let Some(status) = playback {
         let pos = status.position.as_secs();
         let dur = status.duration.as_secs();
-        let progress = if dur > 0 { pos as f64 / dur as f64 } else { 0.0 };
+        let progress = if dur > 0 {
+            pos as f64 / dur as f64
+        } else {
+            0.0
+        };
         let filled = (progress * 40.0) as usize;
         let empty = 40 - filled;
 
@@ -622,14 +668,12 @@ fn render_playing(frame: &mut Frame, area: Rect, app: &App) {
             Line::from(""),
             Line::from(Span::styled(
                 app.playing.title.clone(),
-                ratatui::style::Style::default().fg(Theme::PRIMARY).add_modifier(Modifier::BOLD),
+                ratatui::style::Style::default()
+                    .fg(Theme::PRIMARY)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(format!(
-                "{}{}",
-                "█".repeat(filled),
-                "░".repeat(empty)
-            )),
+            Line::from(format!("{}{}", "█".repeat(filled), "░".repeat(empty))),
             Line::from(Span::styled(
                 format!(
                     "{:02}:{:02} / {:02}:{:02}",
@@ -669,8 +713,18 @@ fn render_playing(frame: &mut Frame, area: Rect, app: &App) {
 /// Render status bar at bottom
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let mode_indicator = match app.input_mode {
-        InputMode::Normal => Span::styled(" NORMAL ", ratatui::style::Style::default().fg(Theme::BACKGROUND).bg(Theme::PRIMARY)),
-        InputMode::Editing => Span::styled(" INSERT ", ratatui::style::Style::default().fg(Theme::BACKGROUND).bg(Theme::ACCENT)),
+        InputMode::Normal => Span::styled(
+            " NORMAL ",
+            ratatui::style::Style::default()
+                .fg(Theme::BACKGROUND)
+                .bg(Theme::PRIMARY),
+        ),
+        InputMode::Editing => Span::styled(
+            " INSERT ",
+            ratatui::style::Style::default()
+                .fg(Theme::BACKGROUND)
+                .bg(Theme::ACCENT),
+        ),
     };
 
     let state_indicator = Span::styled(
@@ -679,10 +733,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     let device_indicator = if let Some(device) = app.selected_cast_device() {
-        Span::styled(
-            format!(" 📺 {} ", device.name),
-            Theme::cast_target(),
-        )
+        Span::styled(format!(" 📺 {} ", device.name), Theme::cast_target())
     } else {
         Span::styled(" No device ", Theme::dimmed())
     };

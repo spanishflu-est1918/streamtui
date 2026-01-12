@@ -169,6 +169,10 @@ pub enum Command {
     /// Set volume level
     #[command(visible_alias = "vol")]
     Volume(VolumeCmd),
+
+    /// Cast a raw magnet link directly
+    #[command(visible_alias = "cm")]
+    CastMagnet(CastMagnetCmd),
 }
 
 // =============================================================================
@@ -436,9 +440,46 @@ pub struct CastCmd {
 impl CastCmd {
     /// Get effective device name (command-specific or global)
     pub fn effective_device<'a>(&'a self, global: &'a Option<String>) -> Option<&'a str> {
-        self.device
-            .as_deref()
-            .or_else(|| global.as_deref())
+        self.device.as_deref().or(global.as_deref())
+    }
+}
+
+// =============================================================================
+// Cast Magnet Command
+// =============================================================================
+
+/// Cast a raw magnet link directly to a Chromecast device
+#[derive(Args, Debug)]
+pub struct CastMagnetCmd {
+    /// Magnet link URL
+    #[arg(required = true)]
+    pub magnet: String,
+
+    /// Target device name (overrides --device global flag)
+    #[arg(long, short = 'd')]
+    pub device: Option<String>,
+
+    /// Subtitle language code (e.g., "en") - searches OpenSubtitles
+    #[arg(long)]
+    pub subtitle: Option<String>,
+
+    /// Path to a local subtitle file (.srt, .vtt)
+    #[arg(long)]
+    pub subtitle_file: Option<PathBuf>,
+
+    /// File index within the torrent (default: largest video file)
+    #[arg(long, short = 'i')]
+    pub file_idx: Option<u32>,
+
+    /// Start position in seconds
+    #[arg(long)]
+    pub start: Option<u64>,
+}
+
+impl CastMagnetCmd {
+    /// Get effective device name (command-specific or global)
+    pub fn effective_device<'a>(&'a self, global: &'a Option<String>) -> Option<&'a str> {
+        self.device.as_deref().or(global.as_deref())
     }
 }
 

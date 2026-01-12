@@ -5,7 +5,7 @@
 
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, BorderType, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
 };
 
 use crate::models::SubtitleResult;
@@ -83,7 +83,7 @@ impl SubtitlesView {
     /// Returns a flat list with language headers interspersed
     pub fn grouped_rows(&self) -> Vec<SubtitleRow> {
         let filtered = self.filtered();
-        
+
         // Group by language using BTreeMap for consistent ordering
         let mut by_language: BTreeMap<String, Vec<&SubtitleResult>> = BTreeMap::new();
         for sub in filtered {
@@ -95,7 +95,7 @@ impl SubtitlesView {
 
         // Sort each language group by trust score (descending)
         for subs in by_language.values_mut() {
-            subs.sort_by(|a, b| b.trust_score().cmp(&a.trust_score()));
+            subs.sort_by_key(|s| std::cmp::Reverse(s.trust_score()));
         }
 
         // Flatten into rows with headers
@@ -195,9 +195,9 @@ impl SubtitlesView {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Header
-                Constraint::Min(10),    // Content
-                Constraint::Length(3),  // Keybinds
+                Constraint::Length(3), // Header
+                Constraint::Min(10),   // Content
+                Constraint::Length(3), // Keybinds
             ])
             .split(area);
 
@@ -217,11 +217,9 @@ impl SubtitlesView {
             .border_style(Theme::border_focused())
             .title(Span::styled(" StreamTUI ", Theme::title()));
 
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(header_text, Theme::title()),
-        ]))
-        .block(block)
-        .alignment(Alignment::Center);
+        let header = Paragraph::new(Line::from(vec![Span::styled(header_text, Theme::title())]))
+            .block(block)
+            .alignment(Alignment::Center);
 
         frame.render_widget(header, area);
     }
@@ -234,9 +232,10 @@ impl SubtitlesView {
             .border_style(Theme::border_focused());
 
         if self.subtitles.is_empty() {
-            let empty = Paragraph::new(Line::from(vec![
-                Span::styled("No subtitles found", Theme::dimmed()),
-            ]))
+            let empty = Paragraph::new(Line::from(vec![Span::styled(
+                "No subtitles found",
+                Theme::dimmed(),
+            )]))
             .block(block)
             .alignment(Alignment::Center);
             frame.render_widget(empty, area);
@@ -248,10 +247,10 @@ impl SubtitlesView {
 
         // Build grouped rows for display
         let rows = self.grouped_rows();
-        
+
         // Map selected index to row index (accounting for headers)
         let selected_row_idx = self.selected_to_row_index(&rows);
-        
+
         // Calculate scroll offset
         let scroll_offset = if selected_row_idx >= visible_height {
             selected_row_idx.saturating_sub(visible_height) + 1
@@ -268,9 +267,7 @@ impl SubtitlesView {
             .skip(scroll_offset)
             .take(visible_height)
             .map(|(_, row)| match row {
-                SubtitleRow::LanguageHeader(lang) => {
-                    self.render_language_header(lang)
-                }
+                SubtitleRow::LanguageHeader(lang) => self.render_language_header(lang),
                 SubtitleRow::Subtitle(sub) => {
                     let is_selected = selectable_idx == self.selected;
                     let item = self.render_subtitle_item(sub, is_selected);
@@ -302,9 +299,12 @@ impl SubtitlesView {
     fn render_language_header(&self, language: &str) -> ListItem<'static> {
         let line = Line::from(vec![
             Span::styled("  🌐 ", Theme::accent()),
-            Span::styled(language.to_string(), Style::default()
-                .fg(Theme::PRIMARY)
-                .add_modifier(Modifier::BOLD)),
+            Span::styled(
+                language.to_string(),
+                Style::default()
+                    .fg(Theme::PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]);
         ListItem::new(line)
     }
@@ -313,14 +313,14 @@ impl SubtitlesView {
     fn render_subtitle_item(&self, sub: &SubtitleResult, is_selected: bool) -> ListItem<'static> {
         // Selection marker
         let marker = if is_selected { "  ▸ " } else { "    " };
-        let marker_style = if is_selected { Theme::accent() } else { Theme::dimmed() };
+        let marker_style = if is_selected {
+            Theme::accent()
+        } else {
+            Theme::dimmed()
+        };
 
         // Trust indicator: ✓ for trusted, empty otherwise
-        let trust_indicator = if sub.from_trusted {
-            "[✓] "
-        } else {
-            "[ ] "
-        };
+        let trust_indicator = if sub.from_trusted { "[✓] " } else { "[ ] " };
         let trust_style = if sub.from_trusted {
             Theme::success()
         } else {
@@ -337,11 +337,15 @@ impl SubtitlesView {
 
         // Download count (formatted)
         let downloads = Self::format_downloads(sub.downloads);
-        let downloads_style = if is_selected { Theme::accent() } else { Theme::dimmed() };
+        let downloads_style = if is_selected {
+            Theme::accent()
+        } else {
+            Theme::dimmed()
+        };
 
         // Status indicators
         let mut status_spans = Vec::new();
-        
+
         if sub.from_trusted {
             status_spans.push(Span::styled(" Trusted", Theme::success()));
         }
@@ -500,10 +504,10 @@ mod tests {
         ]);
 
         let rows = view.grouped_rows();
-        
+
         // Should have: English header, 2 English subs, Spanish header, 1 Spanish sub
         assert_eq!(rows.len(), 5);
-        
+
         // First should be English header (BTreeMap orders alphabetically)
         assert!(matches!(&rows[0], SubtitleRow::LanguageHeader(l) if l == "English"));
         // Then English subs (sorted by trust score - trusted first)
@@ -578,16 +582,16 @@ mod tests {
 
         view.page_down(3);
         assert_eq!(view.selected, 3);
-        
+
         view.page_down(3); // Should cap at max
         assert_eq!(view.selected, 4);
-        
+
         view.page_up(2);
         assert_eq!(view.selected, 2);
-        
+
         view.first();
         assert_eq!(view.selected, 0);
-        
+
         view.last();
         assert_eq!(view.selected, 4);
     }
@@ -611,13 +615,16 @@ mod tests {
         ]);
 
         let rows = view.grouped_rows();
-        
+
         // After English header, should be: Trusted (11000), Untrusted (5000), AI (3000)
         if let SubtitleRow::Subtitle(first) = &rows[1] {
             assert!(first.from_trusted, "Trusted should be first");
         }
         if let SubtitleRow::Subtitle(second) = &rows[2] {
-            assert!(!second.from_trusted && !second.ai_translated, "Untrusted non-AI should be second");
+            assert!(
+                !second.from_trusted && !second.ai_translated,
+                "Untrusted non-AI should be second"
+            );
         }
         if let SubtitleRow::Subtitle(third) = &rows[3] {
             assert!(third.ai_translated, "AI should be last");
