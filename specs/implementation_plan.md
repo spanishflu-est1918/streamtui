@@ -132,7 +132,7 @@ For each component: **Write tests → Make them pass → Refactor**
 - Selection with Enter, navigation with ↑↓, Page Up/Down, Home/End
 - Cyberpunk styling (neon borders, accent colors, language headers)
 
-### 21. [ ] Now Playing overlay (src/ui/player.rs)
+### 21. [x] Now Playing overlay (src/ui/player.rs)
 - Casting status
 - Progress bar
 - Playback controls
