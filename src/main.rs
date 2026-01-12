@@ -106,6 +106,10 @@ async fn run_cli(cli: Cli) -> ExitCode {
             commands::cast_magnet_cmd(cmd, device, &output).await
         }
 
+        Some(Command::PlayLocal(cmd)) => {
+            commands::play_local_cmd(cmd, &output).await
+        }
+
         Some(Command::Status(cmd)) => commands::status_cmd(cmd, device, &output).await,
 
         Some(Command::Play(cmd)) => commands::play_cmd(cmd, device, &output).await,

@@ -8,11 +8,12 @@ use serde::Serialize;
 use crate::api::{TmdbClient, TorrentioClient};
 use crate::cli::{
     CastCmd, CastMagnetCmd, DevicesCmd, ExitCode, InfoCmd, MediaTypeFilter, Output, PauseCmd,
-    PlayCmd, PlaybackState, PlaybackStatus, SearchCmd, SeekCmd, SeekPosition, StatusCmd, StopCmd,
-    StreamsCmd, SubtitlesCmd, TrendingCmd, TrendingWindow, VolumeCmd, VolumeLevel,
+    PlayCmd, PlayLocalCmd, PlaybackState, PlaybackStatus, PlayerChoice, SearchCmd, SeekCmd,
+    SeekPosition, StatusCmd, StopCmd, StreamsCmd, SubtitlesCmd, TrendingCmd, TrendingWindow,
+    VolumeCmd, VolumeLevel,
 };
 use crate::models::{CastDevice, MediaType, Quality, StreamSource};
-use crate::stream::SubtitleClient;
+use crate::stream::{LocalPlayer, PlayerType, SubtitleClient};
 
 // =============================================================================
 // Config
@@ -367,21 +368,91 @@ pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
 }
 
 // =============================================================================
+// Local Player Helpers
+// =============================================================================
+
+/// Convert CLI PlayerChoice to stream PlayerType
+fn to_player_type(choice: PlayerChoice) -> PlayerType {
+    match choice {
+        PlayerChoice::Vlc => PlayerType::Vlc,
+        PlayerChoice::Mpv => PlayerType::Mpv,
+    }
+}
+
+/// Play a stream URL locally in VLC/mpv
+async fn play_locally(
+    stream_url: &str,
+    subtitle_path: Option<&std::path::Path>,
+    player_type: PlayerType,
+    output: &Output,
+) -> ExitCode {
+    let player = LocalPlayer::new(player_type);
+
+    // Check if player is available
+    if !player.is_available().await {
+        return output.error(
+            format!(
+                "{} not found. Install it first.",
+                player_type.display_name()
+            ),
+            ExitCode::Error,
+        );
+    }
+
+    output.info(format!(
+        "Opening in {}...",
+        player_type.display_name()
+    ));
+
+    match player.play(stream_url, subtitle_path).await {
+        Ok(_child) => {
+            #[derive(Serialize)]
+            struct PlayLocalSuccess {
+                status: &'static str,
+                player: String,
+                stream_url: String,
+            }
+
+            let response = PlayLocalSuccess {
+                status: "playing",
+                player: player_type.display_name().to_string(),
+                stream_url: stream_url.to_string(),
+            };
+
+            if let Err(e) = output.print(&response) {
+                return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
+            }
+            ExitCode::Success
+        }
+        Err(e) => output.error(format!("Failed to start player: {}", e), ExitCode::Error),
+    }
+}
+
+// =============================================================================
 // Cast Command
 // =============================================================================
 
 pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> ExitCode {
-    let device_name = match cmd.device.as_deref().or(device) {
-        Some(d) => d,
-        None => {
-            return output.error(
-                "No device specified. Use --device or -d flag.",
-                ExitCode::DeviceNotFound,
-            )
+    // If --vlc flag is set, we don't need a device
+    let device_name = if cmd.vlc {
+        None
+    } else {
+        match cmd.device.as_deref().or(device) {
+            Some(d) => Some(d),
+            None => {
+                return output.error(
+                    "No device specified. Use --device or -d flag, or use --vlc for local playback.",
+                    ExitCode::DeviceNotFound,
+                )
+            }
         }
     };
 
-    output.info(format!("Casting {} to {}...", cmd.imdb_id, device_name));
+    if cmd.vlc {
+        output.info(format!("Playing {} in VLC...", cmd.imdb_id));
+    } else {
+        output.info(format!("Casting {} to {}...", cmd.imdb_id, device_name.unwrap()));
+    }
 
     // Step 1: Get streams
     let torrentio = TorrentioClient::new();
@@ -461,7 +532,7 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
     let file_idx = stream.file_idx.unwrap_or(0);
 
     // Start webtorrent in background
-    let mut webtorrent = match tokio::process::Command::new("webtorrent")
+    let webtorrent = match tokio::process::Command::new("webtorrent")
         .arg(&magnet)
         .arg("--port")
         .arg(port.to_string())
@@ -495,7 +566,17 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
     let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
     output.info(format!("Stream URL: {}", stream_url));
 
+    // If --vlc flag, play locally instead of casting
+    if cmd.vlc {
+        // Note: we intentionally don't kill webtorrent here - it continues streaming
+        let _ = webtorrent; // webtorrent keeps running in background
+        return play_locally(&stream_url, None, PlayerType::Vlc, output).await;
+    }
+
     // Step 5: Cast to device using catt
+    let device_name = device_name.unwrap(); // Safe: we validated above
+    let mut webtorrent = webtorrent; // Make mutable for potential kill
+    
     let mut catt_args = vec![
         "-d".to_string(),
         device_name.to_string(),
@@ -578,13 +659,18 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
 // =============================================================================
 
 pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &Output) -> ExitCode {
-    let device_name = match cmd.device.as_deref().or(device) {
-        Some(d) => d,
-        None => {
-            return output.error(
-                "No device specified. Use --device or -d flag.",
-                ExitCode::DeviceNotFound,
-            )
+    // If --vlc flag is set, we don't need a device
+    let device_name = if cmd.vlc {
+        None
+    } else {
+        match cmd.device.as_deref().or(device) {
+            Some(d) => Some(d),
+            None => {
+                return output.error(
+                    "No device specified. Use --device or -d flag, or use --vlc for local playback.",
+                    ExitCode::DeviceNotFound,
+                )
+            }
         }
     };
 
@@ -596,7 +682,11 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
         );
     }
 
-    output.info(format!("Casting magnet to {}...", device_name));
+    if cmd.vlc {
+        output.info("Playing magnet in VLC...");
+    } else {
+        output.info(format!("Casting magnet to {}...", device_name.unwrap()));
+    }
 
     // Get local IP for streaming
     let local_ip = match local_ip_address::local_ip() {
@@ -608,7 +698,7 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
     let file_idx = cmd.file_idx.unwrap_or(0);
 
     // Start webtorrent in background
-    let mut webtorrent = match tokio::process::Command::new("webtorrent")
+    let webtorrent = match tokio::process::Command::new("webtorrent")
         .arg(&cmd.magnet)
         .arg("--port")
         .arg(port.to_string())
@@ -643,6 +733,29 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
     // Build stream URL
     let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
     output.info(format!("Stream URL: {}", stream_url));
+
+    // If --vlc flag, play locally instead of casting
+    if cmd.vlc {
+        let subtitle_path = cmd.subtitle_file.as_deref();
+        
+        // Validate subtitle file if provided
+        if let Some(sub_file) = subtitle_path {
+            if !sub_file.exists() {
+                return output.error(
+                    format!("Subtitle file not found: {}", sub_file.display()),
+                    ExitCode::InvalidArgs,
+                );
+            }
+        }
+        
+        // Note: webtorrent keeps running in background
+        let _ = webtorrent;
+        return play_locally(&stream_url, subtitle_path, PlayerType::Vlc, output).await;
+    }
+
+    // Cast to device using catt
+    let device_name = device_name.unwrap(); // Safe: we validated above
+    let mut webtorrent = webtorrent; // Make mutable for potential kill
 
     // Build catt args
     let mut catt_args = vec![
@@ -730,6 +843,98 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
             }
         }
     }
+}
+
+// =============================================================================
+// Play Local Command
+// =============================================================================
+
+pub async fn play_local_cmd(cmd: PlayLocalCmd, output: &Output) -> ExitCode {
+    // Validate magnet link
+    if !cmd.magnet.starts_with("magnet:?") {
+        return output.error(
+            "Invalid magnet link. Must start with 'magnet:?'",
+            ExitCode::InvalidArgs,
+        );
+    }
+
+    let player_type = to_player_type(cmd.player);
+    output.info(format!("Playing magnet in {}...", player_type.display_name()));
+
+    // Check if player is available
+    let player = LocalPlayer::new(player_type);
+    if !player.is_available().await {
+        return output.error(
+            format!(
+                "{} not found. Install it first.",
+                player_type.display_name()
+            ),
+            ExitCode::Error,
+        );
+    }
+
+    // Get local IP for streaming
+    let local_ip = match local_ip_address::local_ip() {
+        Ok(ip) => ip,
+        Err(e) => return output.error(format!("Failed to get local IP: {}", e), ExitCode::Error),
+    };
+
+    let port = 8888u16;
+    let file_idx = cmd.file_idx.unwrap_or(0);
+
+    // Start webtorrent in background
+    let webtorrent = match tokio::process::Command::new("webtorrent")
+        .arg(&cmd.magnet)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--hostname")
+        .arg(local_ip.to_string())
+        .arg("--not-on-top")
+        .arg("--quiet")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return output.error(
+                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
+                    ExitCode::Error,
+                );
+            }
+            return output.error(
+                format!("Failed to start webtorrent: {}", e),
+                ExitCode::Error,
+            );
+        }
+    };
+
+    output.info("Starting torrent stream...");
+
+    // Wait for webtorrent to start
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // Build stream URL
+    let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
+    output.info(format!("Stream URL: {}", stream_url));
+
+    // Validate subtitle file if provided
+    let subtitle_path = cmd.subtitle_file.as_deref();
+    if let Some(sub_file) = subtitle_path {
+        if !sub_file.exists() {
+            return output.error(
+                format!("Subtitle file not found: {}", sub_file.display()),
+                ExitCode::InvalidArgs,
+            );
+        }
+    }
+
+    // webtorrent keeps running in background
+    let _ = webtorrent;
+
+    // Play locally
+    play_locally(&stream_url, subtitle_path, player_type, output).await
 }
 
 // =============================================================================

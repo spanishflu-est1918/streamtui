@@ -173,6 +173,10 @@ pub enum Command {
     /// Cast a raw magnet link directly
     #[command(visible_alias = "cm")]
     CastMagnet(CastMagnetCmd),
+
+    /// Play locally in VLC or mpv (no Chromecast)
+    #[command(visible_alias = "pl")]
+    PlayLocal(PlayLocalCmd),
 }
 
 // =============================================================================
@@ -330,6 +334,16 @@ pub enum StreamSort {
     Size,
 }
 
+/// Local player selection
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlayerChoice {
+    /// VLC media player (default)
+    #[default]
+    Vlc,
+    /// mpv media player
+    Mpv,
+}
+
 // =============================================================================
 // Subtitles Command
 // =============================================================================
@@ -435,6 +449,10 @@ pub struct CastCmd {
     /// Start position in seconds
     #[arg(long)]
     pub start: Option<u64>,
+
+    /// Play locally in VLC instead of casting
+    #[arg(long)]
+    pub vlc: bool,
 }
 
 impl CastCmd {
@@ -474,6 +492,10 @@ pub struct CastMagnetCmd {
     /// Start position in seconds
     #[arg(long)]
     pub start: Option<u64>,
+
+    /// Play locally in VLC instead of casting
+    #[arg(long)]
+    pub vlc: bool,
 }
 
 impl CastMagnetCmd {
@@ -481,6 +503,30 @@ impl CastMagnetCmd {
     pub fn effective_device<'a>(&'a self, global: &'a Option<String>) -> Option<&'a str> {
         self.device.as_deref().or(global.as_deref())
     }
+}
+
+// =============================================================================
+// Play Local Command
+// =============================================================================
+
+/// Play a magnet link locally in VLC or mpv
+#[derive(Args, Debug)]
+pub struct PlayLocalCmd {
+    /// Magnet link URL
+    #[arg(required = true)]
+    pub magnet: String,
+
+    /// Player to use (vlc or mpv)
+    #[arg(long, short = 'p', value_enum, default_value = "vlc")]
+    pub player: PlayerChoice,
+
+    /// Path to a local subtitle file (.srt, .vtt)
+    #[arg(long)]
+    pub subtitle_file: Option<PathBuf>,
+
+    /// File index within the torrent (default: largest video file)
+    #[arg(long, short = 'i')]
+    pub file_idx: Option<u32>,
 }
 
 // =============================================================================
