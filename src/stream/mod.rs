@@ -8,6 +8,10 @@ pub mod torrent;
 pub mod cast;
 pub mod subtitles;
 
-pub use torrent::TorrentManager;
-pub use cast::CastManager;
 pub use subtitles::SubtitleClient;
+
+// Re-export for TUI use (currently unused in CLI)
+#[allow(unused_imports)]
+pub use torrent::TorrentManager;
+#[allow(unused_imports)]
+pub use cast::CastManager;

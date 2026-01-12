@@ -17,6 +17,7 @@
 
 mod app;
 mod cli;
+mod commands;
 mod models;
 
 mod api;
@@ -45,145 +46,68 @@ async fn main() -> Result<()> {
 /// Run CLI command and return exit code
 async fn run_cli(cli: Cli) -> ExitCode {
     let output = Output::new(&cli);
+    let device = cli.device.as_deref();
 
     match cli.command {
         Some(Command::Search(cmd)) => {
-            output.info(format!("Searching for: {}", cmd.query));
-            // TODO: Implement search
-            output.error("Search not yet implemented", ExitCode::Error)
+            commands::search_cmd(cmd, &output).await
         }
 
         Some(Command::Trending(cmd)) => {
-            output.info(format!("Fetching trending ({:?})...", cmd.window));
-            // TODO: Implement trending
-            output.error("Trending not yet implemented", ExitCode::Error)
+            commands::trending_cmd(cmd, &output).await
         }
 
         Some(Command::Info(cmd)) => {
-            output.info(format!("Getting info for: {}", cmd.id));
-            // TODO: Implement info
-            output.error("Info not yet implemented", ExitCode::Error)
+            commands::info_cmd(cmd, &output).await
         }
 
         Some(Command::Streams(cmd)) => {
             if let Err(e) = cli::validate_imdb_id(&cmd.imdb_id) {
                 return output.error(e, ExitCode::InvalidArgs);
             }
-            output.info(format!("Finding streams for: {}", cmd.imdb_id));
-            // TODO: Implement streams
-            output.error("Streams not yet implemented", ExitCode::Error)
+            commands::streams_cmd(cmd, &output).await
         }
 
         Some(Command::Subtitles(cmd)) => {
             if let Err(e) = cli::validate_imdb_id(&cmd.imdb_id) {
                 return output.error(e, ExitCode::InvalidArgs);
             }
-            output.info(format!(
-                "Searching subtitles for: {} ({})",
-                cmd.imdb_id,
-                cmd.lang
-            ));
-            // TODO: Implement subtitles
-            output.error("Subtitles not yet implemented", ExitCode::Error)
+            commands::subtitles_cmd(cmd, &output).await
         }
 
-        Some(Command::Devices(_cmd)) => {
-            output.info("Scanning for Chromecast devices...");
-            // TODO: Implement device discovery
-            output.error("Devices not yet implemented", ExitCode::Error)
+        Some(Command::Devices(cmd)) => {
+            commands::devices_cmd(cmd, &output).await
         }
 
         Some(Command::Cast(cmd)) => {
             if let Err(e) = cli::validate_imdb_id(&cmd.imdb_id) {
                 return output.error(e, ExitCode::InvalidArgs);
             }
-            let device = cmd.effective_device(&cli.device);
-            match device {
-                Some(d) => output.info(format!("Casting {} to {}", cmd.imdb_id, d)),
-                None => {
-                    return output.error(
-                        "No device specified. Use --device or set default in config.",
-                        ExitCode::DeviceNotFound,
-                    )
-                }
-            }
-            // TODO: Implement cast
-            output.error("Cast not yet implemented", ExitCode::Error)
+            commands::cast_cmd(cmd, device, &output).await
         }
 
-        Some(Command::Status(_cmd)) => {
-            // Return idle status for now
-            let status = cli::PlaybackStatus::default();
-            if output.print_json(&status).is_err() {
-                return ExitCode::Error;
-            }
-            ExitCode::Success
+        Some(Command::Status(cmd)) => {
+            commands::status_cmd(cmd, device, &output).await
         }
 
-        Some(Command::Play(_)) => {
-            output.info("Resuming playback...");
-            // TODO: Implement play
-            output.error("Play not yet implemented", ExitCode::Error)
+        Some(Command::Play(cmd)) => {
+            commands::play_cmd(cmd, device, &output).await
         }
 
-        Some(Command::Pause(_)) => {
-            output.info("Pausing playback...");
-            // TODO: Implement pause
-            output.error("Pause not yet implemented", ExitCode::Error)
+        Some(Command::Pause(cmd)) => {
+            commands::pause_cmd(cmd, device, &output).await
         }
 
         Some(Command::Stop(cmd)) => {
-            output.info("Stopping playback...");
-            if cmd.kill_stream {
-                output.info("Also killing torrent stream...");
-            }
-            // TODO: Implement stop
-            output.error("Stop not yet implemented", ExitCode::Error)
+            commands::stop_cmd(cmd, device, &output).await
         }
 
         Some(Command::Seek(cmd)) => {
-            match cmd.parse_position() {
-                cli::SeekPosition::Absolute(secs) => {
-                    output.info(format!("Seeking to {}s", secs));
-                }
-                cli::SeekPosition::Forward(secs) => {
-                    output.info(format!("Seeking forward {}s", secs));
-                }
-                cli::SeekPosition::Backward(secs) => {
-                    output.info(format!("Seeking backward {}s", secs));
-                }
-                cli::SeekPosition::Invalid(s) => {
-                    return output.error(
-                        format!("Invalid seek position: {}", s),
-                        ExitCode::InvalidArgs,
-                    );
-                }
-            }
-            // TODO: Implement seek
-            output.error("Seek not yet implemented", ExitCode::Error)
+            commands::seek_cmd(cmd, device, &output).await
         }
 
         Some(Command::Volume(cmd)) => {
-            match cmd.parse_level() {
-                cli::VolumeLevel::Absolute(vol) => {
-                    output.info(format!("Setting volume to {}%", vol));
-                }
-                cli::VolumeLevel::Relative(delta) => {
-                    if delta >= 0 {
-                        output.info(format!("Increasing volume by {}%", delta));
-                    } else {
-                        output.info(format!("Decreasing volume by {}%", -delta));
-                    }
-                }
-                cli::VolumeLevel::Invalid(s) => {
-                    return output.error(
-                        format!("Invalid volume level: {}", s),
-                        ExitCode::InvalidArgs,
-                    );
-                }
-            }
-            // TODO: Implement volume
-            output.error("Volume not yet implemented", ExitCode::Error)
+            commands::volume_cmd(cmd, device, &output).await
         }
 
         None => {
