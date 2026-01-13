@@ -849,13 +849,35 @@ impl App {
                 true
             }
             KeyCode::Enter | KeyCode::Char('c') => {
-                // Go to sources or start cast
-                self.navigate(AppState::Sources);
+                // Fetch sources and navigate
+                if let Some(detail) = &self.detail {
+                    let (imdb_id, season, episode) = match detail {
+                        DetailState::Movie { detail, .. } => {
+                            (detail.imdb_id.clone(), None, None)
+                        }
+                        DetailState::Tv { detail, selected_season, episode_list, episodes, .. } => {
+                            // For TV, we need season and episode
+                            let ep = episodes.get(episode_list.selected).map(|e| e.episode);
+                            (detail.imdb_id.clone(), Some(*selected_season), ep)
+                        }
+                    };
+                    self.sources.loading = LoadingState::Loading(Some("Fetching streams...".into()));
+                    self.send_command(AppCommand::FetchStreams { imdb_id, season, episode });
+                    self.navigate(AppState::Sources);
+                }
                 true
             }
             KeyCode::Char('u') => {
-                // Go to subtitles
-                self.navigate(AppState::Subtitles);
+                // Fetch subtitles and navigate
+                if let Some(detail) = &self.detail {
+                    let imdb_id = match detail {
+                        DetailState::Movie { detail, .. } => detail.imdb_id.clone(),
+                        DetailState::Tv { detail, .. } => detail.imdb_id.clone(),
+                    };
+                    self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: "en".into() });
+                    self.navigate(AppState::Subtitles);
+                }
                 true
             }
             KeyCode::Tab => {

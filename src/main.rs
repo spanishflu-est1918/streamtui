@@ -49,8 +49,9 @@ use ratatui::{
 
 use tokio::sync::mpsc;
 
-use crate::api::TmdbClient;
-use crate::app::{App, AppCommand, AppMessage, AppState, InputMode, LoadingState};
+use crate::api::{TmdbClient, TorrentioClient};
+use crate::stream::SubtitleClient;
+use crate::app::{App, AppCommand, AppMessage, AppState, DetailState, InputMode, LoadingState};
 use crate::cli::{Cli, Command, ExitCode, Output};
 use crate::config::Config;
 use crate::ui::Theme;
@@ -222,13 +223,32 @@ async fn handle_async_commands(
                         Err(e) => AppMessage::Error(format!("Failed to fetch TV show: {}", e)),
                     }
                 }
-                AppCommand::FetchStreams { .. } => {
-                    // TODO: Implement with TorrentioClient
-                    AppMessage::Error("Streams not yet implemented".into())
+                AppCommand::FetchStreams { imdb_id, season, episode } => {
+                    let torrentio = TorrentioClient::new();
+                    let result = if let (Some(s), Some(e)) = (season, episode) {
+                        // TV episode
+                        torrentio.episode_streams(&imdb_id, s as u16, e as u16).await
+                    } else {
+                        // Movie
+                        torrentio.movie_streams(&imdb_id).await
+                    };
+                    match result {
+                        Ok(streams) => AppMessage::StreamsLoaded(streams),
+                        Err(e) => AppMessage::Error(format!("Failed to fetch streams: {}", e)),
+                    }
                 }
-                AppCommand::FetchSubtitles { .. } => {
-                    // TODO: Implement with SubtitleClient
-                    AppMessage::Error("Subtitles not yet implemented".into())
+                AppCommand::FetchSubtitles { imdb_id, lang } => {
+                    let sub_config = Config::load();
+                    let subtitle_client = if let Some(key) = sub_config.get_opensubtitles_api_key() {
+                        SubtitleClient::with_api_key(key)
+                    } else {
+                        SubtitleClient::new()
+                    };
+                    let lang_opt = if lang.is_empty() { None } else { Some(lang.as_str()) };
+                    match subtitle_client.search(&imdb_id, lang_opt).await {
+                        Ok(subs) => AppMessage::SubtitlesLoaded(subs),
+                        Err(e) => AppMessage::Error(format!("Failed to fetch subtitles: {}", e)),
+                    }
                 }
             };
             let _ = msg_tx.send(result);
@@ -576,36 +596,199 @@ fn render_search_results(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render detail view (movie or TV show)
 fn render_detail(frame: &mut Frame, area: Rect, app: &App) {
-    let title = app.detail.as_ref().map(|d| d.title()).unwrap_or("DETAIL");
+    let Some(detail) = &app.detail else {
+        // No detail loaded yet
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Theme::border())
+            .title(Span::styled(" DETAIL ", Theme::title()));
+        frame.render_widget(block, area);
+        return;
+    };
 
+    match detail {
+        DetailState::Movie { detail, .. } => render_movie_detail(frame, area, detail),
+        DetailState::Tv { detail, .. } => render_tv_detail(frame, area, detail),
+    }
+}
+
+/// Render movie detail view
+fn render_movie_detail(frame: &mut Frame, area: Rect, movie: &crate::models::MovieDetail) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Theme::border())
-        .title(Span::styled(format!(" {} ", title), Theme::title()));
+        .title(Span::styled(format!(" {} ", movie.title), Theme::title()));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let content = Paragraph::new(vec![
+    // Format runtime
+    let hours = movie.runtime / 60;
+    let mins = movie.runtime % 60;
+    let runtime_str = if hours > 0 {
+        format!("{}h {}m", hours, mins)
+    } else {
+        format!("{}m", mins)
+    };
+
+    // Format genres
+    let genres_str = movie.genres.join(" · ");
+
+    // Rating color based on score
+    let rating_style = if movie.vote_average >= 7.0 {
+        Theme::success()
+    } else if movie.vote_average >= 5.0 {
+        Theme::warning()
+    } else {
+        Theme::dimmed()
+    };
+
+    // Build content lines
+    let mut lines = vec![
+        // Title line with year and rating
+        Line::from(vec![
+            Span::styled(format!("{} ", movie.title), Theme::highlighted()),
+            Span::styled(format!("({}) ", movie.year), Theme::year()),
+            Span::styled(format!("★ {:.1}", movie.vote_average), rating_style),
+        ]),
         Line::from(""),
-        Line::from(Span::styled("Detail view", Theme::text())),
+        // Runtime and genres
+        Line::from(vec![
+            Span::styled(runtime_str, Theme::accent()),
+            Span::styled(" │ ", Theme::dimmed()),
+            Span::styled(genres_str, Theme::secondary()),
+        ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  c  ", Theme::keybind()),
-            Span::styled("View sources", Theme::dimmed()),
-        ]),
-        Line::from(vec![
-            Span::styled("  u  ", Theme::keybind()),
-            Span::styled("Select subtitles", Theme::dimmed()),
-        ]),
-        Line::from(vec![
-            Span::styled(" ESC ", Theme::keybind()),
-            Span::styled("Go back", Theme::dimmed()),
-        ]),
-    ])
-    .alignment(Alignment::Center);
+    ];
+
+    // Add overview with word wrapping
+    let overview_width = inner.width.saturating_sub(4) as usize;
+    if !movie.overview.is_empty() {
+        for line in wrap_text(&movie.overview, overview_width) {
+            lines.push(Line::from(Span::styled(line, Theme::text())));
+        }
+    } else {
+        lines.push(Line::from(Span::styled("No overview available.", Theme::dimmed())));
+    }
+
+    // Add spacing before keybinds
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    // Keybind hints
+    lines.push(Line::from(vec![
+        Span::styled("  c  ", Theme::keybind()),
+        Span::styled("View sources    ", Theme::dimmed()),
+        Span::styled("  u  ", Theme::keybind()),
+        Span::styled("Subtitles    ", Theme::dimmed()),
+        Span::styled(" ESC ", Theme::keybind()),
+        Span::styled("Back", Theme::dimmed()),
+    ]));
+
+    let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
+}
+
+/// Render TV show detail view
+fn render_tv_detail(frame: &mut Frame, area: Rect, tv: &crate::models::TvDetail) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Theme::border())
+        .title(Span::styled(format!(" {} ", tv.name), Theme::title()));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Format seasons
+    let seasons_str = format!("{} season{}", tv.seasons.len(), if tv.seasons.len() == 1 { "" } else { "s" });
+
+    // Format genres
+    let genres_str = tv.genres.join(" · ");
+
+    // Rating color based on score
+    let rating_style = if tv.vote_average >= 7.0 {
+        Theme::success()
+    } else if tv.vote_average >= 5.0 {
+        Theme::warning()
+    } else {
+        Theme::dimmed()
+    };
+
+    // Build content lines
+    let mut lines = vec![
+        // Title line with year and rating
+        Line::from(vec![
+            Span::styled(format!("{} ", tv.name), Theme::highlighted()),
+            Span::styled(format!("({}) ", tv.year), Theme::year()),
+            Span::styled(format!("★ {:.1}", tv.vote_average), rating_style),
+        ]),
+        Line::from(""),
+        // Seasons and genres
+        Line::from(vec![
+            Span::styled(seasons_str, Theme::accent()),
+            Span::styled(" │ ", Theme::dimmed()),
+            Span::styled(genres_str, Theme::secondary()),
+        ]),
+        Line::from(""),
+    ];
+
+    // Add overview with word wrapping
+    let overview_width = inner.width.saturating_sub(4) as usize;
+    if !tv.overview.is_empty() {
+        for line in wrap_text(&tv.overview, overview_width) {
+            lines.push(Line::from(Span::styled(line, Theme::text())));
+        }
+    } else {
+        lines.push(Line::from(Span::styled("No overview available.", Theme::dimmed())));
+    }
+
+    // Add spacing before keybinds
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
+
+    // Keybind hints
+    lines.push(Line::from(vec![
+        Span::styled("  c  ", Theme::keybind()),
+        Span::styled("View sources    ", Theme::dimmed()),
+        Span::styled("  u  ", Theme::keybind()),
+        Span::styled("Subtitles    ", Theme::dimmed()),
+        Span::styled(" ESC ", Theme::keybind()),
+        Span::styled("Back", Theme::dimmed()),
+    ]));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+}
+
+/// Wrap text to fit within a given width
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        if current_line.is_empty() {
+            current_line = word.to_string();
+        } else if current_line.len() + 1 + word.len() <= width {
+            current_line.push(' ');
+            current_line.push_str(word);
+        } else {
+            lines.push(current_line);
+            current_line = word.to_string();
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    lines
 }
 
 /// Render sources view

@@ -33,6 +33,8 @@ const TMDB_KEY_POOL: &[&str] = &[
 pub struct Config {
     /// Cached TMDB API key
     pub tmdb_api_key: Option<String>,
+    /// OpenSubtitles API key
+    pub opensubtitles_api_key: Option<String>,
     /// Default Chromecast device name
     pub default_device: Option<String>,
     /// Preferred quality (4k, 1080p, 720p, 480p)
@@ -100,6 +102,16 @@ impl Config {
             .unwrap_or(0);
         let idx = seed % TMDB_KEY_POOL.len();
         TMDB_KEY_POOL[idx].to_string()
+    }
+
+    /// Get OpenSubtitles API key from config or environment
+    pub fn get_opensubtitles_api_key(&self) -> Option<String> {
+        // Check environment variable first
+        if let Ok(key) = std::env::var("OPENSUBTITLES_API_KEY") {
+            return Some(key);
+        }
+        // Fall back to config
+        self.opensubtitles_api_key.clone()
     }
 
     /// Try next key from pool (when current key fails)
