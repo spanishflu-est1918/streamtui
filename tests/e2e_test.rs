@@ -11,7 +11,7 @@ use streamtui::api::{TmdbClient, TorrentioClient};
 use streamtui::app::{App, AppState, DetailState, InputMode, LoadingState, SourcesState};
 use streamtui::models::{
     CastDevice, CastState, MediaType, MovieDetail, PlaybackStatus, Quality, SearchResult,
-    SeasonSummary, StreamSource, SubFormat, SubtitleResult, TvDetail,
+    SeasonSummary, StreamSource, SubFormat, TvDetail,
 };
 use streamtui::stream::SubtitleClient;
 
@@ -121,6 +121,7 @@ fn mock_opensubtitles_search_response() -> &'static str {
                     "download_count": 50000,
                     "hearing_impaired": false,
                     "ai_translated": false,
+                    "machine_translated": false,
                     "from_trusted": true,
                     "release": "The.Batman.2022.2160p.WEB-DL",
                     "fps": 23.976,
@@ -137,6 +138,7 @@ fn mock_opensubtitles_search_response() -> &'static str {
                     "download_count": 25000,
                     "hearing_impaired": true,
                     "ai_translated": false,
+                    "machine_translated": false,
                     "from_trusted": true,
                     "release": "The.Batman.2022.1080p.BluRay",
                     "fps": 23.976,
@@ -503,9 +505,10 @@ async fn test_api_search_to_detail_to_streams() {
         .create_async()
         .await;
 
-    // Mock TMDB movie detail
+    // Mock TMDB movie detail (client appends ?append_to_response=external_ids)
     let detail_mock = tmdb_server
         .mock("GET", "/movie/414906")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(mock_tmdb_movie_detail_response())
@@ -570,9 +573,10 @@ async fn test_api_tv_show_episode_flow() {
     let mut tmdb_server = Server::new_async().await;
     let mut torrentio_server = Server::new_async().await;
 
-    // Mock TMDB TV detail
+    // Mock TMDB TV detail (client appends ?append_to_response=external_ids)
     let detail_mock = tmdb_server
         .mock("GET", "/tv/1396")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(mock_tmdb_tv_detail_response())
@@ -643,12 +647,12 @@ async fn test_api_search_with_subtitles() {
         .create_async()
         .await;
 
-    // Mock OpenSubtitles search
+    // Mock OpenSubtitles search (client strips "tt" prefix, path is /subtitles not /api/v1/subtitles)
     let subs_mock = opensub_server
-        .mock("GET", "/api/v1/subtitles")
+        .mock("GET", "/subtitles")
         .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
             "imdb_id".into(),
-            "tt1877830".into(),
+            "1877830".into(),
         )]))
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -692,12 +696,12 @@ async fn test_cli_search_streams_flow() {
     let mut tmdb_server = Server::new_async().await;
     let mut torrentio_server = Server::new_async().await;
 
-    // Mock TMDB search
+    // Mock TMDB search (UrlEncoded matcher expects decoded value)
     let _search_mock = tmdb_server
         .mock("GET", "/search/multi")
         .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
             "query".into(),
-            "the%20batman".into(),
+            "the batman".into(),
         )]))
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -806,12 +810,12 @@ async fn test_full_e2e_flow_mocked() {
     let mut torrentio_server = Server::new_async().await;
     let mut opensub_server = Server::new_async().await;
 
-    // Setup all mocks
+    // Setup all mocks (UrlEncoded matcher expects decoded value)
     let _search = tmdb_server
         .mock("GET", "/search/multi")
         .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
             "query".into(),
-            "the%20batman".into(),
+            "the batman".into(),
         )]))
         .with_status(200)
         .with_body(mock_tmdb_search_response())
@@ -820,6 +824,7 @@ async fn test_full_e2e_flow_mocked() {
 
     let _detail = tmdb_server
         .mock("GET", "/movie/414906")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_body(mock_tmdb_movie_detail_response())
         .create_async()
@@ -833,10 +838,10 @@ async fn test_full_e2e_flow_mocked() {
         .await;
 
     let _subs = opensub_server
-        .mock("GET", "/api/v1/subtitles")
+        .mock("GET", "/subtitles")
         .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
             "imdb_id".into(),
-            "tt1877830".into(),
+            "1877830".into(),
         )]))
         .with_status(200)
         .with_body(mock_opensubtitles_search_response())
@@ -982,7 +987,8 @@ async fn test_no_subtitles_handling() {
     let mut server = Server::new_async().await;
 
     let _mock = server
-        .mock("GET", "/api/v1/subtitles")
+        .mock("GET", "/subtitles")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_body(r#"{"data": [], "total_count": 0}"#)
         .create_async()

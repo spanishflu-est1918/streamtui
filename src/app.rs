@@ -203,14 +203,20 @@ impl SearchState {
     /// Insert character at cursor
     pub fn insert(&mut self, c: char) {
         self.query.insert(self.cursor, c);
-        self.cursor += 1;
+        self.cursor += c.len_utf8();
     }
 
     /// Delete character before cursor
     pub fn backspace(&mut self) {
         if self.cursor > 0 {
-            self.cursor -= 1;
-            self.query.remove(self.cursor);
+            // Find the start of the previous character
+            let prev_boundary = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.query.remove(prev_boundary);
+            self.cursor = prev_boundary;
         }
     }
 
@@ -224,14 +230,22 @@ impl SearchState {
     /// Move cursor left
     pub fn cursor_left(&mut self) {
         if self.cursor > 0 {
-            self.cursor -= 1;
+            // Find the start of the previous character
+            self.cursor = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
         }
     }
 
     /// Move cursor right
     pub fn cursor_right(&mut self) {
         if self.cursor < self.query.len() {
-            self.cursor += 1;
+            // Find the start of the next character
+            if let Some(c) = self.query[self.cursor..].chars().next() {
+                self.cursor += c.len_utf8();
+            }
         }
     }
 
@@ -589,7 +603,12 @@ impl App {
                 self.quit();
                 return true;
             }
-            KeyCode::Char('/') | KeyCode::Char('s') => {
+            KeyCode::Char('/') => {
+                self.focus_search();
+                return true;
+            }
+            // 's' focuses search except in Playing state where it stops playback
+            KeyCode::Char('s') if self.state != AppState::Playing => {
                 self.focus_search();
                 return true;
             }
