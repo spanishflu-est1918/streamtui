@@ -500,10 +500,11 @@ impl App {
     /// Focus search input
     pub fn focus_search(&mut self) {
         if self.state == AppState::Home || self.state == AppState::Search {
-            self.input_mode = InputMode::Editing;
             if self.state == AppState::Home {
                 self.navigate(AppState::Search);
             }
+            // Set editing mode AFTER navigate (navigate resets to Normal)
+            self.input_mode = InputMode::Editing;
         }
     }
 

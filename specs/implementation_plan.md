@@ -122,15 +122,20 @@ For each component: **Write tests → Make them pass → Refactor**
 - Popup mode for overlay rendering
 - 31 unit tests: all pass
 
-### 18. [ ] Browser view (src/ui/browser.rs)
+### 18. [x] Browser view (src/ui/browser.rs)
 - Content list with selection
 - Quality/source selection popup
 - Keyboard handling
+- BrowserView and SourceBrowserView with navigation, paging, styling
+- 26 unit tests: all pass
 
-### 19. [ ] Detail view (src/ui/detail.rs)
+### 19. [x] Detail view (src/ui/detail.rs)
 - Movie/TV show info display
 - Season/episode picker for TV
 - Source list
+- DetailView with seasons, episodes, sources, overview scroll
+- DetailFocus cycling for TV vs Movie
+- 32 unit tests: all pass
 
 ### 20. [x] Subtitle selection view (src/ui/subtitles.rs)
 - Group subtitles by language (BTreeMap for consistent ordering)
