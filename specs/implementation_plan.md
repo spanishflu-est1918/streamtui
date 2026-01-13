@@ -210,12 +210,12 @@ For each component: **Write tests → Make them pass → Refactor**
 - All E2E tests passing
 - Tests: TUI state machine flows, API integration, CLI command flows, full mocked E2E, error handling, edge cases
 
-### 27. [ ] README and docs
-- Installation instructions
-- Usage guide (TUI + CLI)
-- Claude Code examples
-- Screenshots
-- Dependencies (webtorrent, catt)
+### 27. [x] README and docs
+- Installation instructions (cargo install, npm/pip deps)
+- Usage guide (TUI keyboard shortcuts + full CLI reference)
+- Claude Code examples (search/cast workflow, status monitoring, automation)
+- ASCII art mockup (screenshots TODO - require manual capture)
+- Dependencies documented (webtorrent-cli, catt)
 
 ### 28. [ ] Polish
 - Error messages
