@@ -361,7 +361,7 @@ async fn test_cast_failure_recovery() {
     manager.select_device(device.clone());
 
     // First cast attempt (simulated failure)
-    let result1 = manager.cast("http://invalid-url", None).await;
+    let _result1 = manager.cast("http://invalid-url", None).await;
 
     // Manager should still be usable after failure
     assert!(

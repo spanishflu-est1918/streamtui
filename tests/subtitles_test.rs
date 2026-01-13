@@ -226,7 +226,7 @@ async fn test_download_caches_file() {
     let mut server = Server::new_async().await;
 
     // First call - mock download endpoint
-    let download_mock = server
+    let _download_mock = server
         .mock("POST", "/download")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -243,7 +243,7 @@ async fn test_download_caches_file() {
         .await;
 
     // Mock actual subtitle file download (the link returned above)
-    let file_mock = server
+    let _file_mock = server
         .mock("GET", "/download/xyz123/subs.srt")
         .with_status(200)
         .with_header("content-type", "text/plain")
@@ -269,7 +269,7 @@ async fn test_download_caches_file() {
     let client = SubtitleClient::with_base_url(server.url());
 
     // First download - should hit network
-    let content1 = client.download(&subtitle).await;
+    let _content1 = client.download(&subtitle).await;
     // This may fail if not implemented - that's TDD!
     // For now we test the contract
 
@@ -587,14 +587,11 @@ async fn test_handles_404_error() {
         .await;
 
     let client = SubtitleClient::with_base_url(server.url());
-    let result = client.search("tt0000000", None).await;
+    let _result = client.search("tt0000000", None).await;
 
     // Should either return error or empty vec - both acceptable
     // Implementation choice: error is more informative
     mock.assert_async().await;
-
-    // TDD: Either behavior is acceptable initially
-    // assert!(result.is_err() || result.unwrap().is_empty());
 }
 
 // =============================================================================
@@ -971,7 +968,7 @@ fn auto_select_subtitle_hi<'a>(
     }
 
     for lang in preferred_languages {
-        let mut lang_results: Vec<&SubtitleResult> =
+        let lang_results: Vec<&SubtitleResult> =
             results.iter().filter(|r| r.language == *lang).collect();
 
         if lang_results.is_empty() {

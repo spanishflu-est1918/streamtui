@@ -51,13 +51,8 @@ fn test_theme_colors_valid_rgb() {
         let rgb = color_to_rgb(color);
         assert!(rgb.is_some(), "{} should be an RGB color", name);
 
-        // Verify values are valid (0-255)
-        let (r, g, b) = rgb.unwrap();
-        assert!(
-            r <= 255 && g <= 255 && b <= 255,
-            "{} has invalid RGB values",
-            name
-        );
+        // Verify values are valid (u8 is already 0-255)
+        let (_, _, _) = rgb.unwrap();
     }
 }
 
@@ -162,7 +157,7 @@ fn test_terminal(width: u16, height: u16) -> Terminal<TestBackend> {
 }
 
 /// Helper layout function that mirrors the actual app layout
-fn render_main_layout(frame: &mut Frame, area: Rect) -> (Rect, Rect, Rect) {
+fn render_main_layout(_frame: &mut Frame, area: Rect) -> (Rect, Rect, Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -805,8 +800,8 @@ fn test_now_playing_overlay_progress_bar() {
     let progress = state.progress();
     assert!((progress - 0.258).abs() < 0.01, "Progress should be ~25.8%");
 
-    // Create gauge widget
-    let gauge = Gauge::default()
+    // Create gauge widget (we just test it compiles and renders correctly)
+    let _gauge = Gauge::default()
         .gauge_style(Theme::progress_bar())
         .ratio(progress)
         .label(format!(

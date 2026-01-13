@@ -3,7 +3,7 @@
 //! Tests for the Torrentio Stremio addon client.
 //! Following specs/addons.md test specifications.
 
-use mockito::{Matcher, Server};
+use mockito::Server;
 use streamtui::api::torrentio::TorrentioClient;
 use streamtui::models::{Quality, StreamSource};
 
