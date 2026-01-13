@@ -213,9 +213,13 @@ For each component: **Write tests → Make them pass → Refactor**
 ### 27. [x] README and docs
 - Installation instructions (cargo install, npm/pip deps)
 - Usage guide (TUI keyboard shortcuts + full CLI reference)
-- Claude Code examples (search/cast workflow, status monitoring, automation)
-- ASCII art mockup (screenshots TODO - require manual capture)
-- Dependencies documented (webtorrent-cli, catt)
+- All CLI commands documented with options and aliases
+- Cast-magnet and play-local commands documented
+- Claude Code examples (search/cast workflow, status monitoring, error handling)
+- ASCII art mockups for TUI, Now Playing, and Quality Selection
+- JSON output format and exit codes documented
+- Project structure overview
+- Configuration file documentation
 
 ### 28. [x] Polish
 - Error messages: CLI has descriptive errors with exit codes, TUI has error popup overlay
