@@ -10,12 +10,14 @@
 //! - `stream` - Torrent and cast managers
 //! - `ui` - TUI components
 //! - `app` - Application state and navigation
+//! - `cli` - Command-line interface for automation
 
 // Allow dead code for TUI components and models prepared for future interactive mode
 #![allow(dead_code)]
 
 pub mod api;
 pub mod app;
+pub mod cli;
 pub mod models;
 pub mod stream;
 pub mod ui;

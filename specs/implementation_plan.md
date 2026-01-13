@@ -164,17 +164,30 @@ For each component: **Write tests → Make them pass → Refactor**
 - Seek/Volume parsing (absolute, relative, timestamp)
 - 10 unit tests: all pass
 
-### 23. [ ] CLI commands implementation
-- search, trending, info, subtitles commands
-- streams command
-- devices command
-- cast command with subtitle support
-- status, play, pause, stop, seek, volume
+### 23. [x] CLI commands implementation (src/commands.rs)
+- search, trending, info, subtitles commands with TMDB API
+- streams command with Torrentio integration
+- devices command with catt scan
+- cast command with webtorrent streaming, quality selection, subtitle support
+- cast_magnet, play_local commands for direct magnet casting
+- status, play, pause, stop, seek, volume via catt playback control
+- Proper error handling with semantic exit codes
 
-### 24. [ ] CLI tests (tests/cli_test.rs)
-- Test all commands with mocked backends
-- Test JSON output format
-- Test exit codes
+### 24. [x] CLI tests (tests/cli_test.rs)
+- Test all CLI argument parsing (search, trending, info, streams, subtitles, devices, cast, status, playback)
+- Test global flags (--json, --device, --quiet, --config)
+- Test command aliases (s, tr, i, st, sub, dev, vol)
+- Test seek position parsing (absolute, relative +/-, timestamp HH:MM:SS)
+- Test volume parsing (absolute 0-100, relative +/-, capped at 100)
+- Test IMDB ID validation
+- Test JSON output format (success/error responses, playback states)
+- Test cast device parsing from catt scan output
+- Test playback status parsing from catt status output
+- Test exit codes (0-6 for success, error, invalid args, network, device not found, no streams, cast failed)
+- Test stream source quality ranking, size parsing, seed parsing, magnet generation
+- Test subtitle trust scoring and display formatting
+- Test torrent session URL generation, speed/progress parsing
+- 75 tests: all pass
 
 ## Phase 6: Integration
 
