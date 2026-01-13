@@ -27,8 +27,8 @@ pub enum AppCommand {
     FetchEpisodes { tv_id: u64, season: u8 },
     /// Fetch streams for content
     FetchStreams { imdb_id: String, season: Option<u8>, episode: Option<u8> },
-    /// Fetch subtitles
-    FetchSubtitles { imdb_id: String, lang: String },
+    /// Fetch subtitles (for TV: season/episode needed)
+    FetchSubtitles { imdb_id: String, season: Option<u16>, episode: Option<u16>, lang: String },
     /// Discover Chromecast devices
     DiscoverDevices,
     /// Start playback (webtorrent + cast)
@@ -1235,12 +1235,19 @@ impl App {
             KeyCode::Char('u') => {
                 // Fetch subtitles and navigate
                 if let Some(detail) = &self.detail {
-                    let imdb_id = match detail {
-                        DetailState::Movie { detail, .. } => detail.imdb_id.clone(),
-                        DetailState::Tv { detail, .. } => detail.imdb_id.clone(),
+                    let (imdb_id, season, episode) = match detail {
+                        DetailState::Movie { detail, .. } => (detail.imdb_id.clone(), None, None),
+                        DetailState::Tv { detail, selected_season, episode_list, episodes, .. } => {
+                            // Get selected episode number for TV
+                            let season_num = detail.seasons.get(*selected_season as usize)
+                                .map(|s| s.season_number as u16);
+                            let episode_num = episodes.get(episode_list.selected)
+                                .map(|e| e.episode as u16);
+                            (detail.imdb_id.clone(), season_num, episode_num)
+                        }
                     };
                     self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
-                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: self.subtitles.lang_filter.lang_code().to_string() });
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, season, episode, lang: self.subtitles.lang_filter.lang_code().to_string() });
                     self.navigate(AppState::Subtitles);
                 }
                 true
@@ -1299,8 +1306,9 @@ impl App {
                 self.navigate(AppState::Subtitles);
                 // Auto-fetch subtitles if we have an IMDB ID
                 if let Some(imdb_id) = self.get_imdb_id() {
+                    let (season, episode) = self.get_season_episode();
                     self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
-                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: self.subtitles.lang_filter.lang_code().to_string() });
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, season, episode, lang: self.subtitles.lang_filter.lang_code().to_string() });
                 }
                 true
             }
@@ -1378,6 +1386,20 @@ impl App {
         })
     }
 
+    /// Get season/episode from current TV detail (if applicable)
+    fn get_season_episode(&self) -> (Option<u16>, Option<u16>) {
+        match &self.detail {
+            Some(DetailState::Tv { detail, selected_season, episode_list, episodes, .. }) => {
+                let season_num = detail.seasons.get(*selected_season as usize)
+                    .map(|s| s.season_number as u16);
+                let episode_num = episodes.get(episode_list.selected)
+                    .map(|e| e.episode as u16);
+                (season_num, episode_num)
+            }
+            _ => (None, None),
+        }
+    }
+
     fn handle_subtitles_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1392,9 +1414,10 @@ impl App {
                 // Toggle language filter and refetch
                 self.subtitles.lang_filter = self.subtitles.lang_filter.next();
                 if let Some(imdb_id) = self.get_imdb_id() {
+                    let (season, episode) = self.get_season_episode();
                     self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
                     let lang = self.subtitles.lang_filter.lang_code().to_string();
-                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang });
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, season, episode, lang });
                 }
                 true
             }
@@ -1494,9 +1517,12 @@ impl App {
             KeyCode::Char('u') => {
                 // Open subtitle selector
                 if let Some(imdb_id) = self.get_imdb_id() {
+                    let (season, episode) = self.get_season_episode();
                     self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
                     self.send_command(AppCommand::FetchSubtitles {
                         imdb_id,
+                        season,
+                        episode,
                         lang: self.subtitles.lang_filter.lang_code().to_string()
                     });
                     self.navigate(AppState::Subtitles);

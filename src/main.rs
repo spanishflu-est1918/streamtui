@@ -258,11 +258,16 @@ async fn handle_async_commands(
                         Err(e) => AppMessage::Error(format!("Failed to fetch streams: {}", e)),
                     }
                 }
-                AppCommand::FetchSubtitles { imdb_id, lang } => {
+                AppCommand::FetchSubtitles { imdb_id, season, episode, lang } => {
                     // Stremio client is free - no API key needed
                     let subtitle_client = SubtitleClient::new();
                     let lang_opt = if lang.is_empty() { None } else { Some(lang.as_str()) };
-                    match subtitle_client.search(&imdb_id, lang_opt).await {
+                    // Use episode-specific search for TV, movie search otherwise
+                    let result = match (season, episode) {
+                        (Some(s), Some(e)) => subtitle_client.search_episode(&imdb_id, s, e, lang_opt).await,
+                        _ => subtitle_client.search(&imdb_id, lang_opt).await,
+                    };
+                    match result {
                         Ok(subs) => AppMessage::SubtitlesLoaded(subs),
                         Err(e) => AppMessage::Error(format!("Failed to fetch subtitles: {}", e)),
                     }
