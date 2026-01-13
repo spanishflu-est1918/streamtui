@@ -102,13 +102,9 @@ async fn run_cli(cli: Cli) -> ExitCode {
             commands::cast_cmd(cmd, device, &output).await
         }
 
-        Some(Command::CastMagnet(cmd)) => {
-            commands::cast_magnet_cmd(cmd, device, &output).await
-        }
+        Some(Command::CastMagnet(cmd)) => commands::cast_magnet_cmd(cmd, device, &output).await,
 
-        Some(Command::PlayLocal(cmd)) => {
-            commands::play_local_cmd(cmd, &output).await
-        }
+        Some(Command::PlayLocal(cmd)) => commands::play_local_cmd(cmd, &output).await,
 
         Some(Command::Status(cmd)) => commands::status_cmd(cmd, device, &output).await,
 
@@ -186,8 +182,8 @@ async fn run_event_loop(terminal: &mut Tui, app: &mut App) -> Result<()> {
             }
         }
 
-        // TODO: Handle async operations (search, fetch streams, etc.)
-        // This is where we'd check channels for completed async tasks
+        // Future: Handle async operations (search, fetch streams, etc.)
+        // This is where we'd check channels for completed async tasks in TUI mode
     }
 
     Ok(())

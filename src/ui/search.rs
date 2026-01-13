@@ -267,16 +267,10 @@ impl SearchView {
         if self.results.is_empty() {
             if self.query.is_empty() && !self.trending.is_empty() {
                 // Show trending content
-                self.render_list(
-                    frame,
-                    area,
-                    &self.trending,
-                    " 🔥 TRENDING ",
-                    self.selected,
-                );
+                self.render_list(frame, area, &self.trending, " 🔥 TRENDING ", self.selected);
                 return;
             }
-            
+
             // Show trending loading state
             if self.trending_loading {
                 let loading_block = Paragraph::new("⟳ Loading trending...")

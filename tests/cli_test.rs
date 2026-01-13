@@ -8,11 +8,11 @@
 // =============================================================================
 
 mod cli_parsing {
+    use clap::Parser;
     use streamtui::cli::{
         Cli, Command, ExitCode as CliExitCode, MediaTypeFilter, QualityFilter, SeekCmd,
         SeekPosition, StreamSort, TrendingWindow, VolumeCmd, VolumeLevel,
     };
-    use clap::Parser;
 
     #[test]
     fn test_no_args_is_tui_mode() {
@@ -37,11 +37,17 @@ mod cli_parsing {
     #[test]
     fn test_search_with_filters() {
         let cli = Cli::parse_from([
-            "streamtui", "search", "batman",
-            "--limit", "10",
-            "-t", "movie",
-            "--year-from", "2020",
-            "--year-to", "2024",
+            "streamtui",
+            "search",
+            "batman",
+            "--limit",
+            "10",
+            "-t",
+            "movie",
+            "--year-from",
+            "2020",
+            "--year-to",
+            "2024",
         ]);
         match cli.command {
             Some(Command::Search(cmd)) => {
@@ -95,10 +101,17 @@ mod cli_parsing {
     #[test]
     fn test_streams_command_tv() {
         let cli = Cli::parse_from([
-            "streamtui", "streams", "tt0903747",
-            "-s", "1", "-e", "5",
-            "-Q", "1080p",
-            "--sort", "quality",
+            "streamtui",
+            "streams",
+            "tt0903747",
+            "-s",
+            "1",
+            "-e",
+            "5",
+            "-Q",
+            "1080p",
+            "--sort",
+            "quality",
         ]);
         match cli.command {
             Some(Command::Streams(cmd)) => {
@@ -115,8 +128,11 @@ mod cli_parsing {
     #[test]
     fn test_subtitles_command() {
         let cli = Cli::parse_from([
-            "streamtui", "subtitles", "tt1877830",
-            "--lang", "en,es,fr",
+            "streamtui",
+            "subtitles",
+            "tt1877830",
+            "--lang",
+            "en,es,fr",
             "--trusted",
         ]);
         match cli.command {
@@ -145,10 +161,15 @@ mod cli_parsing {
     #[test]
     fn test_cast_command() {
         let cli = Cli::parse_from([
-            "streamtui", "cast", "tt1877830",
-            "-d", "Living Room TV",
-            "-Q", "1080p",
-            "--subtitle", "en",
+            "streamtui",
+            "cast",
+            "tt1877830",
+            "-d",
+            "Living Room TV",
+            "-Q",
+            "1080p",
+            "--subtitle",
+            "en",
         ]);
         match cli.command {
             Some(Command::Cast(cmd)) => {
@@ -165,10 +186,17 @@ mod cli_parsing {
     #[test]
     fn test_cast_tv_episode() {
         let cli = Cli::parse_from([
-            "streamtui", "cast", "tt0903747",
-            "-d", "TV",
-            "-s", "3", "-e", "7",
-            "--index", "2",
+            "streamtui",
+            "cast",
+            "tt0903747",
+            "-d",
+            "TV",
+            "-s",
+            "3",
+            "-e",
+            "7",
+            "--index",
+            "2",
         ]);
         match cli.command {
             Some(Command::Cast(cmd)) => {
@@ -213,64 +241,86 @@ mod cli_parsing {
 
     #[test]
     fn test_seek_position_parsing_absolute() {
-        let cmd = SeekCmd { position: "3600".to_string() };
+        let cmd = SeekCmd {
+            position: "3600".to_string(),
+        };
         assert_eq!(cmd.parse_position(), SeekPosition::Absolute(3600));
     }
 
     #[test]
     fn test_seek_position_parsing_forward() {
-        let cmd = SeekCmd { position: "+30".to_string() };
+        let cmd = SeekCmd {
+            position: "+30".to_string(),
+        };
         assert_eq!(cmd.parse_position(), SeekPosition::Forward(30));
     }
 
     #[test]
     fn test_seek_position_parsing_backward() {
-        let cmd = SeekCmd { position: "-15".to_string() };
+        let cmd = SeekCmd {
+            position: "-15".to_string(),
+        };
         assert_eq!(cmd.parse_position(), SeekPosition::Backward(15));
     }
 
     #[test]
     fn test_seek_position_parsing_timestamp() {
         // MM:SS
-        let cmd = SeekCmd { position: "5:30".to_string() };
+        let cmd = SeekCmd {
+            position: "5:30".to_string(),
+        };
         assert_eq!(cmd.parse_position(), SeekPosition::Absolute(330)); // 5*60+30
 
         // HH:MM:SS
-        let cmd = SeekCmd { position: "1:30:00".to_string() };
+        let cmd = SeekCmd {
+            position: "1:30:00".to_string(),
+        };
         assert_eq!(cmd.parse_position(), SeekPosition::Absolute(5400)); // 1*3600+30*60
     }
 
     #[test]
     fn test_seek_position_parsing_invalid() {
-        let cmd = SeekCmd { position: "invalid".to_string() };
+        let cmd = SeekCmd {
+            position: "invalid".to_string(),
+        };
         assert!(matches!(cmd.parse_position(), SeekPosition::Invalid(_)));
     }
 
     #[test]
     fn test_volume_parsing_absolute() {
-        let cmd = VolumeCmd { level: "50".to_string() };
+        let cmd = VolumeCmd {
+            level: "50".to_string(),
+        };
         assert_eq!(cmd.parse_level(), VolumeLevel::Absolute(50));
     }
 
     #[test]
     fn test_volume_parsing_capped() {
         // Values over 100 should be capped
-        let cmd = VolumeCmd { level: "150".to_string() };
+        let cmd = VolumeCmd {
+            level: "150".to_string(),
+        };
         assert_eq!(cmd.parse_level(), VolumeLevel::Absolute(100));
     }
 
     #[test]
     fn test_volume_parsing_relative() {
-        let cmd = VolumeCmd { level: "+10".to_string() };
+        let cmd = VolumeCmd {
+            level: "+10".to_string(),
+        };
         assert_eq!(cmd.parse_level(), VolumeLevel::Relative(10));
 
-        let cmd = VolumeCmd { level: "-5".to_string() };
+        let cmd = VolumeCmd {
+            level: "-5".to_string(),
+        };
         assert_eq!(cmd.parse_level(), VolumeLevel::Relative(-5));
     }
 
     #[test]
     fn test_volume_parsing_invalid() {
-        let cmd = VolumeCmd { level: "loud".to_string() };
+        let cmd = VolumeCmd {
+            level: "loud".to_string(),
+        };
         assert!(matches!(cmd.parse_level(), VolumeLevel::Invalid(_)));
     }
 
@@ -279,15 +329,21 @@ mod cli_parsing {
         let cli = Cli::parse_from([
             "streamtui",
             "--json",
-            "--device", "My TV",
+            "--device",
+            "My TV",
             "--quiet",
-            "--config", "/path/to/config.toml",
-            "search", "test",
+            "--config",
+            "/path/to/config.toml",
+            "search",
+            "test",
         ]);
         assert!(cli.json);
         assert!(cli.quiet);
         assert_eq!(cli.device, Some("My TV".to_string()));
-        assert_eq!(cli.config, Some(std::path::PathBuf::from("/path/to/config.toml")));
+        assert_eq!(
+            cli.config,
+            Some(std::path::PathBuf::from("/path/to/config.toml"))
+        );
     }
 
     #[test]
@@ -375,16 +431,14 @@ mod imdb_validation {
 // =============================================================================
 
 mod json_output {
-    use streamtui::cli::{
-        ExitCode, JsonOutput, PlaybackState, PlaybackStatus, StatusOk,
-    };
     use serde_json;
+    use streamtui::cli::{ExitCode, JsonOutput, PlaybackState, PlaybackStatus, StatusOk};
 
     #[test]
     fn test_json_output_success() {
         let output = JsonOutput::success("test data");
         let json = serde_json::to_string(&output).unwrap();
-        
+
         assert!(json.contains("\"data\":\"test data\""));
         assert!(!json.contains("error"));
         assert!(!json.contains("exit_code")); // Should be omitted when 0
@@ -404,7 +458,7 @@ mod json_output {
     fn test_status_ok_format() {
         let status = StatusOk::default();
         let json = serde_json::to_string(&status).unwrap();
-        
+
         assert_eq!(json, r#"{"status":"ok"}"#);
     }
 
@@ -535,8 +589,8 @@ Another Device - not.an.ip.address
 // =============================================================================
 
 mod status_parsing {
-    use streamtui::models::{CastState, PlaybackStatus};
     use std::time::Duration;
+    use streamtui::models::{CastState, PlaybackStatus};
 
     #[test]
     fn test_parse_catt_status_playing() {
@@ -688,7 +742,7 @@ mod stream_source {
             size_bytes: None,
         };
         let magnet = source.to_magnet("tt1877830");
-        
+
         assert!(magnet.starts_with("magnet:?"));
         assert!(magnet.contains("xt=urn:btih:abc123def456"));
         assert!(magnet.contains("dn="));
@@ -702,7 +756,12 @@ mod stream_source {
 mod subtitle_result {
     use streamtui::models::SubtitleResult;
 
-    fn make_subtitle(downloads: u32, from_trusted: bool, ai_translated: bool, hearing_impaired: bool) -> SubtitleResult {
+    fn make_subtitle(
+        downloads: u32,
+        from_trusted: bool,
+        ai_translated: bool,
+        hearing_impaired: bool,
+    ) -> SubtitleResult {
         SubtitleResult {
             id: "123".to_string(),
             file_id: 123,
@@ -743,7 +802,7 @@ mod subtitle_result {
     fn test_trust_score_trusted_beats_ai() {
         let trusted_sub = make_subtitle(1000, true, false, false);
         let ai_sub = make_subtitle(10000, false, true, false);
-        
+
         // Trusted should beat AI even with fewer downloads
         // trusted: 1000 + 10000 = 11000
         // ai: 10000 - 5000 = 5000
@@ -754,7 +813,7 @@ mod subtitle_result {
     fn test_subtitle_display() {
         let sub = make_subtitle(50000, true, false, false);
         let display = sub.to_string();
-        
+
         // Should contain language, release, downloads, and trust indicator
         assert!(display.contains("en") || display.contains("English"));
         assert!(display.contains("50000") || display.contains("⬇"));
@@ -764,7 +823,7 @@ mod subtitle_result {
     fn test_subtitle_display_hearing_impaired() {
         let sub = make_subtitle(1000, false, false, true);
         let display = sub.to_string();
-        
+
         // Should contain hearing impaired indicator
         assert!(display.contains("👂"));
     }
@@ -773,7 +832,7 @@ mod subtitle_result {
     fn test_subtitle_display_ai_translated() {
         let sub = make_subtitle(1000, false, true, false);
         let display = sub.to_string();
-        
+
         // Should contain AI indicator
         assert!(display.contains("🤖"));
     }
@@ -784,8 +843,8 @@ mod subtitle_result {
 // =============================================================================
 
 mod torrent_session {
-    use streamtui::models::TorrentSession;
     use std::net::IpAddr;
+    use streamtui::models::TorrentSession;
 
     #[test]
     fn test_generate_stream_url() {
@@ -828,7 +887,7 @@ mod torrent_session {
         let session = TorrentSession::new("magnet:?xt=...".to_string(), None);
         let mut session = session;
         session.download_speed = 5 * 1024 * 1024; // 5 MB/s
-        
+
         let formatted = session.format_speed();
         assert!(formatted.contains("5") && formatted.contains("MB/s"));
     }
@@ -836,7 +895,7 @@ mod torrent_session {
     #[test]
     fn test_format_downloaded() {
         let mut session = TorrentSession::new("magnet:?xt=...".to_string(), None);
-        
+
         // Less than 1 GB: show MB
         session.downloaded = 500 * 1024 * 1024; // 500 MB
         assert!(session.format_downloaded().contains("MB"));
@@ -868,8 +927,8 @@ mod quality_filter {
 // =============================================================================
 
 mod output_helpers {
-    use streamtui::cli::{Cli, Output};
     use clap::Parser;
+    use streamtui::cli::{Cli, Output};
 
     #[test]
     fn test_output_json_mode() {
@@ -929,7 +988,7 @@ mod cast_helpers {
     fn test_effective_device_command_specific() {
         let cmd = make_cast_cmd(Some("Command TV".to_string()));
         let global = Some("Global TV".to_string());
-        
+
         // Command-specific should take precedence
         assert_eq!(cmd.effective_device(&global), Some("Command TV"));
     }
@@ -938,7 +997,7 @@ mod cast_helpers {
     fn test_effective_device_fallback_to_global() {
         let cmd = make_cast_cmd(None);
         let global = Some("Global TV".to_string());
-        
+
         assert_eq!(cmd.effective_device(&global), Some("Global TV"));
     }
 
@@ -946,7 +1005,7 @@ mod cast_helpers {
     fn test_effective_device_none() {
         let cmd = make_cast_cmd(None);
         let global: Option<String> = None;
-        
+
         assert_eq!(cmd.effective_device(&global), None);
     }
 }
@@ -963,7 +1022,10 @@ mod integration_helpers {
         assert_eq!(CastState::from_catt_state("PLAYING"), CastState::Playing);
         assert_eq!(CastState::from_catt_state("playing"), CastState::Playing);
         assert_eq!(CastState::from_catt_state("PAUSED"), CastState::Paused);
-        assert_eq!(CastState::from_catt_state("BUFFERING"), CastState::Buffering);
+        assert_eq!(
+            CastState::from_catt_state("BUFFERING"),
+            CastState::Buffering
+        );
         assert_eq!(CastState::from_catt_state("IDLE"), CastState::Idle);
         assert_eq!(CastState::from_catt_state("STOPPED"), CastState::Stopped);
         assert_eq!(CastState::from_catt_state("unknown"), CastState::Idle);

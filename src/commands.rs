@@ -399,10 +399,7 @@ async fn play_locally(
         );
     }
 
-    output.info(format!(
-        "Opening in {}...",
-        player_type.display_name()
-    ));
+    output.info(format!("Opening in {}...", player_type.display_name()));
 
     match player.play(stream_url, subtitle_path).await {
         Ok(_child) => {
@@ -439,19 +436,21 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
     } else {
         match cmd.device.as_deref().or(device) {
             Some(d) => Some(d),
-            None => {
-                return output.error(
-                    "No device specified. Use --device or -d flag, or use --vlc for local playback.",
-                    ExitCode::DeviceNotFound,
-                )
-            }
+            None => return output.error(
+                "No device specified. Use --device or -d flag, or use --vlc for local playback.",
+                ExitCode::DeviceNotFound,
+            ),
         }
     };
 
     if cmd.vlc {
         output.info(format!("Playing {} in VLC...", cmd.imdb_id));
     } else {
-        output.info(format!("Casting {} to {}...", cmd.imdb_id, device_name.unwrap()));
+        output.info(format!(
+            "Casting {} to {}...",
+            cmd.imdb_id,
+            device_name.unwrap()
+        ));
     }
 
     // Step 1: Get streams
@@ -576,7 +575,7 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
     // Step 5: Cast to device using catt
     let device_name = device_name.unwrap(); // Safe: we validated above
     let mut webtorrent = webtorrent; // Make mutable for potential kill
-    
+
     let mut catt_args = vec![
         "-d".to_string(),
         device_name.to_string(),
@@ -658,19 +657,21 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
 // Cast Magnet Command
 // =============================================================================
 
-pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &Output) -> ExitCode {
+pub async fn cast_magnet_cmd(
+    cmd: CastMagnetCmd,
+    device: Option<&str>,
+    output: &Output,
+) -> ExitCode {
     // If --vlc flag is set, we don't need a device
     let device_name = if cmd.vlc {
         None
     } else {
         match cmd.device.as_deref().or(device) {
             Some(d) => Some(d),
-            None => {
-                return output.error(
-                    "No device specified. Use --device or -d flag, or use --vlc for local playback.",
-                    ExitCode::DeviceNotFound,
-                )
-            }
+            None => return output.error(
+                "No device specified. Use --device or -d flag, or use --vlc for local playback.",
+                ExitCode::DeviceNotFound,
+            ),
         }
     };
 
@@ -737,7 +738,7 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
     // If --vlc flag, play locally instead of casting
     if cmd.vlc {
         let subtitle_path = cmd.subtitle_file.as_deref();
-        
+
         // Validate subtitle file if provided
         if let Some(sub_file) = subtitle_path {
             if !sub_file.exists() {
@@ -747,7 +748,7 @@ pub async fn cast_magnet_cmd(cmd: CastMagnetCmd, device: Option<&str>, output: &
                 );
             }
         }
-        
+
         // Note: webtorrent keeps running in background
         let _ = webtorrent;
         return play_locally(&stream_url, subtitle_path, PlayerType::Vlc, output).await;
@@ -859,7 +860,10 @@ pub async fn play_local_cmd(cmd: PlayLocalCmd, output: &Output) -> ExitCode {
     }
 
     let player_type = to_player_type(cmd.player);
-    output.info(format!("Playing magnet in {}...", player_type.display_name()));
+    output.info(format!(
+        "Playing magnet in {}...",
+        player_type.display_name()
+    ));
 
     // Check if player is available
     let player = LocalPlayer::new(player_type);

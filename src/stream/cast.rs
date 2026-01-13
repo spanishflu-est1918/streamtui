@@ -32,8 +32,9 @@ impl CastManager {
     }
 
     /// Discover available Chromecast devices
+    /// Note: CLI commands use direct subprocess calls in commands.rs
     pub async fn discover(&self) -> Result<Vec<CastDevice>> {
-        // TODO: Implement catt scan
+        // Stub - actual implementation in commands::devices_cmd
         Ok(vec![])
     }
 
@@ -48,44 +49,46 @@ impl CastManager {
     }
 
     /// Cast a URL to the selected device
+    /// Note: CLI commands use direct subprocess calls in commands.rs
     pub async fn cast(&self, _url: &str, _subtitle_url: Option<&str>) -> Result<()> {
-        // TODO: Implement catt cast
+        // Stub - actual implementation in commands::cast_cmd
         anyhow::bail!("No device selected")
     }
 
     /// Get playback status
+    /// Note: CLI commands use direct subprocess calls in commands.rs
     pub async fn status(&self) -> Result<PlaybackStatus> {
-        // TODO: Implement catt status
+        // Stub - actual implementation in commands::status_cmd
         anyhow::bail!("Not implemented")
     }
 
     /// Play/resume
     pub async fn play(&self) -> Result<()> {
-        // TODO: Implement
+        // Stub - actual implementation in commands::playback_control
         Ok(())
     }
 
     /// Pause
     pub async fn pause(&self) -> Result<()> {
-        // TODO: Implement
+        // Stub - actual implementation in commands::playback_control
         Ok(())
     }
 
     /// Stop
     pub async fn stop(&self) -> Result<()> {
-        // TODO: Implement
+        // Stub - actual implementation in commands::playback_control
         Ok(())
     }
 
     /// Seek to position (seconds)
     pub async fn seek(&self, _position: f64) -> Result<()> {
-        // TODO: Implement
+        // Stub - actual implementation in commands::seek_cmd
         Ok(())
     }
 
     /// Set volume (0.0 - 1.0)
     pub async fn volume(&self, _level: f32) -> Result<()> {
-        // TODO: Implement
+        // Stub - actual implementation in commands::volume_cmd
         Ok(())
     }
 }

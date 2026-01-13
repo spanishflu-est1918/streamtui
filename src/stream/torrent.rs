@@ -37,20 +37,21 @@ impl TorrentManager {
     }
 
     /// Start streaming a magnet link, returns stream URL
+    /// Note: CLI commands use direct subprocess calls in commands.rs
     pub async fn stream(&self, _magnet: &str) -> Result<String> {
-        // TODO: Implement webtorrent subprocess
+        // Stub - actual implementation in commands::cast_cmd spawns webtorrent directly
         anyhow::bail!("Not implemented")
     }
 
     /// Get current progress
     pub fn progress(&self) -> Option<TorrentProgress> {
-        // TODO: Implement
+        // Stub - progress parsed from webtorrent stdout in commands.rs
         None
     }
 
     /// Stop the current stream
     pub async fn stop(&self) -> Result<()> {
-        // TODO: Implement
+        // Stub - process killed directly in commands.rs
         Ok(())
     }
 }
