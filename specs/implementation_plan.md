@@ -114,10 +114,13 @@ For each component: **Write tests → Make them pass → Refactor**
 - View-specific states (HomeState, SearchState, DetailState, SourcesState, SubtitlesState, PlayingState)
 - 18 unit tests: all pass
 
-### 17. [ ] Search view (src/ui/search.rs)
-- Search input widget
-- Results list
-- Trending section
+### 17. [x] Search view (src/ui/search.rs)
+- Search input widget with cursor, backspace, delete, home/end navigation
+- Results list with cyberpunk neon styling (rating colors, type badges)
+- Trending section (shown when no active search)
+- Loading and error states
+- Popup mode for overlay rendering
+- 31 unit tests: all pass
 
 ### 18. [ ] Browser view (src/ui/browser.rs)
 - Content list with selection

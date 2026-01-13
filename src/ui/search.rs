@@ -22,10 +22,14 @@ pub struct SearchView {
     pub focused: bool,
     /// Search results to display
     pub results: Vec<SearchResult>,
+    /// Trending content to display when search is empty
+    pub trending: Vec<SearchResult>,
     /// Currently selected result index
     pub selected: usize,
     /// Whether a search is in progress
     pub loading: bool,
+    /// Whether trending is loading
+    pub trending_loading: bool,
     /// Error message if search failed
     pub error: Option<String>,
 }
@@ -118,6 +122,30 @@ impl SearchView {
         self.loading = false;
     }
 
+    /// Set trending results
+    pub fn set_trending(&mut self, trending: Vec<SearchResult>) {
+        self.trending = trending;
+        self.trending_loading = false;
+        // If showing trending (no search results), reset selection
+        if self.results.is_empty() {
+            self.selected = 0;
+        }
+    }
+
+    /// Check if we're showing trending (no search active)
+    pub fn showing_trending(&self) -> bool {
+        self.query.is_empty() && self.results.is_empty() && !self.trending.is_empty()
+    }
+
+    /// Get the currently active list (search results or trending)
+    pub fn active_list(&self) -> &[SearchResult] {
+        if self.results.is_empty() && self.query.is_empty() {
+            &self.trending
+        } else {
+            &self.results
+        }
+    }
+
     /// Move selection up
     pub fn up(&mut self) {
         if self.selected > 0 {
@@ -127,19 +155,20 @@ impl SearchView {
 
     /// Move selection down
     pub fn down(&mut self) {
-        if self.selected < self.results.len().saturating_sub(1) {
+        let list_len = self.active_list().len();
+        if self.selected < list_len.saturating_sub(1) {
             self.selected += 1;
         }
     }
 
     /// Get currently selected result
     pub fn current(&self) -> Option<&SearchResult> {
-        self.results.get(self.selected)
+        self.active_list().get(self.selected)
     }
 
     /// Check if we have results to navigate
     pub fn has_results(&self) -> bool {
-        !self.results.is_empty()
+        !self.active_list().is_empty()
     }
 
     // =========================================================================
@@ -234,8 +263,35 @@ impl SearchView {
             return;
         }
 
-        // Handle empty state
+        // Handle empty state with trending fallback
         if self.results.is_empty() {
+            if self.query.is_empty() && !self.trending.is_empty() {
+                // Show trending content
+                self.render_list(
+                    frame,
+                    area,
+                    &self.trending,
+                    " 🔥 TRENDING ",
+                    self.selected,
+                );
+                return;
+            }
+            
+            // Show trending loading state
+            if self.trending_loading {
+                let loading_block = Paragraph::new("⟳ Loading trending...")
+                    .style(Theme::loading())
+                    .alignment(Alignment::Center)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Theme::border())
+                            .border_type(ratatui::widgets::BorderType::Rounded),
+                    );
+                frame.render_widget(loading_block, area);
+                return;
+            }
+
             let hint = if self.query.is_empty() {
                 "Type to search for movies and TV shows..."
             } else {
@@ -256,13 +312,31 @@ impl SearchView {
             return;
         }
 
+        // Show search results
+        self.render_list(
+            frame,
+            area,
+            &self.results,
+            &format!(" RESULTS ({}) ", self.results.len()),
+            self.selected,
+        );
+    }
+
+    /// Render a list of search results with cyberpunk styling
+    fn render_list(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        items: &[SearchResult],
+        title: &str,
+        selected_idx: usize,
+    ) {
         // Build result items with cyberpunk styling
-        let items: Vec<ListItem> = self
-            .results
+        let list_items: Vec<ListItem> = items
             .iter()
             .enumerate()
             .map(|(i, result)| {
-                let is_selected = i == self.selected;
+                let is_selected = i == selected_idx;
 
                 // Format: ▸ Title (Year) [Type] ★ Rating
                 let marker = if is_selected { "▸ " } else { "  " };
@@ -309,16 +383,13 @@ impl SearchView {
             })
             .collect();
 
-        let results_list = List::new(items)
+        let results_list = List::new(list_items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_style(Theme::border())
                     .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title(Span::styled(
-                        format!(" RESULTS ({}) ", self.results.len()),
-                        Theme::title(),
-                    ))
+                    .title(Span::styled(title, Theme::title()))
                     .title_alignment(Alignment::Left),
             )
             .style(Theme::text());
@@ -391,8 +462,10 @@ mod tests {
         assert_eq!(view.cursor, 0);
         assert!(!view.focused);
         assert!(view.results.is_empty());
+        assert!(view.trending.is_empty());
         assert_eq!(view.selected, 0);
         assert!(!view.loading);
+        assert!(!view.trending_loading);
         assert!(view.error.is_none());
     }
 
@@ -625,5 +698,135 @@ mod tests {
 
         view.loading = true;
         assert!(view.loading);
+    }
+
+    // =========================================================================
+    // Trending Tests
+    // =========================================================================
+
+    #[test]
+    fn test_set_trending() {
+        let mut view = SearchView::new();
+        view.trending_loading = true;
+        view.selected = 5;
+
+        view.set_trending(sample_results());
+
+        assert_eq!(view.trending.len(), 3);
+        assert!(!view.trending_loading);
+        assert_eq!(view.selected, 0); // Reset because showing trending
+    }
+
+    #[test]
+    fn test_set_trending_with_search_results() {
+        let mut view = SearchView::new();
+        view.set_results(sample_results());
+        view.selected = 2;
+
+        // Set trending while we have search results - selection should not reset
+        view.set_trending(sample_results());
+
+        assert_eq!(view.trending.len(), 3);
+        assert_eq!(view.selected, 2); // Not reset because we have search results
+    }
+
+    #[test]
+    fn test_showing_trending() {
+        let mut view = SearchView::new();
+
+        // Empty state - no trending
+        assert!(!view.showing_trending());
+
+        // With trending, no query, no results
+        view.set_trending(sample_results());
+        assert!(view.showing_trending());
+
+        // With query - not showing trending
+        view.query = "batman".to_string();
+        assert!(!view.showing_trending());
+
+        // With results - not showing trending
+        view.query.clear();
+        view.set_results(sample_results());
+        assert!(!view.showing_trending());
+    }
+
+    #[test]
+    fn test_active_list_shows_trending() {
+        let mut view = SearchView::new();
+        view.set_trending(sample_results());
+
+        // No query, no results -> show trending
+        let active = view.active_list();
+        assert_eq!(active.len(), 3);
+        assert_eq!(active[0].title, "The Batman");
+    }
+
+    #[test]
+    fn test_active_list_shows_results() {
+        let mut view = SearchView::new();
+        view.set_trending(sample_results());
+
+        // Set results - should show results not trending
+        view.set_results(vec![SearchResult {
+            id: 100,
+            media_type: MediaType::Movie,
+            title: "Search Result".to_string(),
+            year: Some(2023),
+            overview: "".to_string(),
+            poster_path: None,
+            vote_average: 8.0,
+        }]);
+
+        let active = view.active_list();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].title, "Search Result");
+    }
+
+    #[test]
+    fn test_active_list_with_query() {
+        let mut view = SearchView::new();
+        view.set_trending(sample_results());
+        view.query = "test".to_string();
+
+        // Query set, but no results yet - show empty (not trending)
+        let active = view.active_list();
+        assert!(active.is_empty());
+    }
+
+    #[test]
+    fn test_navigation_with_trending() {
+        let mut view = SearchView::new();
+        view.set_trending(sample_results());
+
+        assert_eq!(view.selected, 0);
+        assert_eq!(view.current().unwrap().title, "The Batman");
+
+        view.down();
+        assert_eq!(view.current().unwrap().title, "Breaking Bad");
+
+        view.down();
+        assert_eq!(view.current().unwrap().title, "Dune");
+
+        view.down(); // At end
+        assert_eq!(view.selected, 2);
+    }
+
+    #[test]
+    fn test_has_results_with_trending() {
+        let mut view = SearchView::new();
+        assert!(!view.has_results());
+
+        view.set_trending(sample_results());
+        assert!(view.has_results()); // Trending counts as having results
+    }
+
+    #[test]
+    fn test_trending_loading_state() {
+        let mut view = SearchView::new();
+        assert!(!view.trending_loading);
+
+        view.trending_loading = true;
+        assert!(view.trending_loading);
     }
 }
