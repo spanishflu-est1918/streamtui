@@ -1676,49 +1676,41 @@ async fn start_playback(
     device: &str,
     subtitle_url: Option<&str>,
 ) -> anyhow::Result<String> {
-    // Download subtitle file if URL provided (webtorrent needs local file path)
+    // Download subtitle file if URL provided
     let subtitle_path = if let Some(url) = subtitle_url {
-        match download_subtitle(url).await {
-            Ok(path) => Some(path),
-            Err(_) => None,
-        }
+        download_subtitle(url).await.ok()
     } else {
         None
     };
 
-    // Escape the magnet URL for shell (it contains special chars)
-    let escaped_magnet = magnet.replace('\'', "'\\''");
-    let escaped_device = device.replace('\'', "'\\''");
+    // Use our own CLI tool for casting
+    let exe = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("Failed to get executable path: {}", e))?;
+    let exe_path = exe.to_string_lossy();
 
-    // Build command with optional subtitles
-    let subtitle_arg = subtitle_path
-        .as_ref()
-        .map(|p| format!(" --subtitles '{}'", p.replace('\'', "'\\''")))
-        .unwrap_or_default();
-
-    // Use nohup + --quiet to fully detach from terminal
-    // --quiet suppresses webtorrent's interactive UI
-    let shell_cmd = format!(
-        "nohup webtorrent '{}' --chromecast '{}'{} --quiet --not-on-top </dev/null >/dev/null 2>&1 &",
-        escaped_magnet, escaped_device, subtitle_arg
+    // Build command: streamtui cast-magnet <magnet> -d <device> [--subtitle-file <path>] -q
+    let mut args = format!(
+        "nohup '{}' cast-magnet '{}' -d '{}' -q",
+        exe_path.replace('\'', "'\\''"),
+        magnet.replace('\'', "'\\''"),
+        device.replace('\'', "'\\''")
     );
+
+    if let Some(ref sub_path) = subtitle_path {
+        args.push_str(&format!(" --subtitle-file '{}'", sub_path.replace('\'', "'\\''")));
+    }
+
+    args.push_str(" </dev/null >/dev/null 2>&1 &");
 
     let child = std::process::Command::new("sh")
         .arg("-c")
-        .arg(&shell_cmd)
+        .arg(&args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow::anyhow!("sh not found")
-            } else {
-                anyhow::anyhow!("Failed to start webtorrent: {}", e)
-            }
-        })?;
+        .map_err(|e| anyhow::anyhow!("Failed to start cast: {}", e))?;
 
-    // Wait for shell to spawn the background process
     std::mem::forget(child);
 
     let msg = if subtitle_path.is_some() {
@@ -1788,19 +1780,28 @@ async fn restart_with_subtitles(
     // 2. Download subtitle file
     let subtitle_path = download_subtitle(subtitle_url).await?;
 
-    // 3. Start webtorrent with subtitle
-    let escaped_magnet = magnet.replace('\'', "'\\''");
-    let escaped_device = device.replace('\'', "'\\''");
-    let escaped_subtitle = subtitle_path.replace('\'', "'\\''");
+    // 3. Use our own CLI tool with --start for seeking
+    let exe = std::env::current_exe()?;
+    let exe_path = exe.to_string_lossy();
 
-    let shell_cmd = format!(
-        "nohup webtorrent '{}' --chromecast '{}' --subtitles '{}' --quiet --not-on-top </dev/null >/dev/null 2>&1 &",
-        escaped_magnet, escaped_device, escaped_subtitle
+    // Build command: streamtui cast-magnet <magnet> -d <device> --subtitle-file <path> --start <pos> -q
+    let mut args = format!(
+        "nohup '{}' cast-magnet '{}' -d '{}' --subtitle-file '{}' -q",
+        exe_path.replace('\'', "'\\''"),
+        magnet.replace('\'', "'\\''"),
+        device.replace('\'', "'\\''"),
+        subtitle_path.replace('\'', "'\\''")
     );
+
+    if seek_seconds > 0 {
+        args.push_str(&format!(" --start {}", seek_seconds));
+    }
+
+    args.push_str(" </dev/null >/dev/null 2>&1 &");
 
     let child = std::process::Command::new("sh")
         .arg("-c")
-        .arg(&shell_cmd)
+        .arg(&args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -1808,47 +1809,33 @@ async fn restart_with_subtitles(
 
     std::mem::forget(child);
 
-    // 4. Wait for stream to start buffering (webtorrent needs time to connect)
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
-    // 5. Seek to saved position
-    if seek_seconds > 0 {
-        let _ = tokio::process::Command::new("catt")
-            .args(["-d", device, "seek", &seek_seconds.to_string()])
-            .output()
-            .await;
-    }
-
     Ok(format!("Restarted with subtitles at {}s", seek_seconds))
 }
 
-/// Send playback control command to catt
+/// Send playback control command using our own CLI
 async fn playback_control(action: &str, device: &str) -> anyhow::Result<()> {
-    let mut args = vec!["-d".to_string(), device.to_string()];
+    let exe = std::env::current_exe()?;
 
-    // Map action to catt command
-    match action {
-        "play_toggle" => args.push("play_toggle".to_string()),
-        "pause" => args.push("pause".to_string()),
-        "play" => args.push("play".to_string()),
-        "stop" => args.push("stop".to_string()),
-        "volumeup" => args.push("volumeup".to_string()),
-        "volumedown" => args.push("volumedown".to_string()),
-        "ffwd" => {
-            args.push("ffwd".to_string());
-            args.push("30".to_string()); // 30 seconds forward
-        }
-        "rewind" => {
-            args.push("rewind".to_string());
-            args.push("30".to_string()); // 30 seconds back
-        }
+    // Map action to our CLI command
+    let (cmd, extra_arg): (&str, Option<&str>) = match action {
+        "play_toggle" | "play" => ("play", None),
+        "pause" => ("pause", None),
+        "stop" => ("stop", None),
+        "volumeup" => ("volume", Some("+10")),
+        "volumedown" => ("volume", Some("-10")),
+        "ffwd" => ("seek", Some("+30")),
+        "rewind" => ("seek", Some("-30")),
         _ => anyhow::bail!("Unknown action: {}", action),
+    };
+
+    let mut command = tokio::process::Command::new(&exe);
+    command.arg(cmd).arg("-d").arg(device).arg("-q");
+
+    if let Some(arg) = extra_arg {
+        command.arg(arg);
     }
 
-    tokio::process::Command::new("catt")
-        .args(&args)
-        .output()
-        .await?;
+    command.output().await?;
 
     Ok(())
 }
