@@ -47,8 +47,12 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::app::{App, AppState, InputMode};
+use tokio::sync::mpsc;
+
+use crate::api::TmdbClient;
+use crate::app::{App, AppCommand, AppMessage, AppState, InputMode, LoadingState};
 use crate::cli::{Cli, Command, ExitCode, Output};
+use crate::config::Config;
 use crate::ui::Theme;
 
 /// Terminal type alias for convenience
@@ -153,11 +157,25 @@ async fn run_tui() -> Result<()> {
     // Initialize terminal
     let mut terminal = init_terminal()?;
 
-    // Create app state
-    let mut app = App::new();
+    // Create app state with command channel
+    let (mut app, cmd_rx) = App::with_channels();
+
+    // Create message channel for async results
+    let (msg_tx, msg_rx) = mpsc::unbounded_channel();
+
+    // Spawn the async task handler
+    let task_handle = tokio::spawn(handle_async_commands(cmd_rx, msg_tx.clone()));
+
+    // Trigger initial trending fetch
+    app.home.loading = LoadingState::Loading(Some("Loading trending...".into()));
+    app.send_command(AppCommand::FetchTrending);
 
     // Run the main event loop
-    let result = run_event_loop(&mut terminal, &mut app).await;
+    let result = run_event_loop(&mut terminal, &mut app, msg_rx).await;
+
+    // Clean up
+    drop(app); // Drop app to close cmd_tx, which will end the task handler
+    let _ = task_handle.await;
 
     // Always restore terminal, even on error
     restore_terminal(&mut terminal)?;
@@ -165,15 +183,77 @@ async fn run_tui() -> Result<()> {
     result
 }
 
+/// Handle async commands from the UI
+async fn handle_async_commands(
+    mut cmd_rx: mpsc::UnboundedReceiver<AppCommand>,
+    msg_tx: mpsc::UnboundedSender<AppMessage>,
+) {
+    let mut config = Config::load();
+
+    while let Some(cmd) = cmd_rx.recv().await {
+        let msg_tx = msg_tx.clone();
+        let api_key = config.get_tmdb_api_key();
+
+        // Spawn each command as a separate task for concurrency
+        tokio::spawn(async move {
+            let client = TmdbClient::new(api_key);
+            let result = match cmd {
+                AppCommand::FetchTrending => {
+                    match client.trending().await {
+                        Ok(results) => AppMessage::TrendingLoaded(results),
+                        Err(e) => AppMessage::Error(format!("Failed to fetch trending: {}", e)),
+                    }
+                }
+                AppCommand::Search(query) => {
+                    match client.search(&query).await {
+                        Ok(results) => AppMessage::SearchResults(results),
+                        Err(e) => AppMessage::Error(format!("Search failed: {}", e)),
+                    }
+                }
+                AppCommand::FetchMovieDetail(id) => {
+                    match client.movie_detail(id).await {
+                        Ok(detail) => AppMessage::MovieDetailLoaded(detail),
+                        Err(e) => AppMessage::Error(format!("Failed to fetch movie: {}", e)),
+                    }
+                }
+                AppCommand::FetchTvDetail(id) => {
+                    match client.tv_detail(id).await {
+                        Ok(detail) => AppMessage::TvDetailLoaded(detail),
+                        Err(e) => AppMessage::Error(format!("Failed to fetch TV show: {}", e)),
+                    }
+                }
+                AppCommand::FetchStreams { .. } => {
+                    // TODO: Implement with TorrentioClient
+                    AppMessage::Error("Streams not yet implemented".into())
+                }
+                AppCommand::FetchSubtitles { .. } => {
+                    // TODO: Implement with SubtitleClient
+                    AppMessage::Error("Subtitles not yet implemented".into())
+                }
+            };
+            let _ = msg_tx.send(result);
+        });
+    }
+}
+
 /// Main event loop - handles input, updates state, renders UI
-async fn run_event_loop(terminal: &mut Tui, app: &mut App) -> Result<()> {
-    const TICK_RATE: Duration = Duration::from_millis(100);
+async fn run_event_loop(
+    terminal: &mut Tui,
+    app: &mut App,
+    mut msg_rx: mpsc::UnboundedReceiver<AppMessage>,
+) -> Result<()> {
+    const TICK_RATE: Duration = Duration::from_millis(50);
 
     while app.running {
         // Render current state
         terminal.draw(|frame| render_ui(frame, app))?;
 
-        // Poll for events with timeout (allows for async updates later)
+        // Check for async messages (non-blocking)
+        while let Ok(msg) = msg_rx.try_recv() {
+            app.handle_message(msg);
+        }
+
+        // Poll for keyboard events with timeout
         if event::poll(TICK_RATE)? {
             if let Event::Key(key) = event::read()? {
                 // Only handle key press events (ignore releases on Windows)
@@ -182,9 +262,6 @@ async fn run_event_loop(terminal: &mut Tui, app: &mut App) -> Result<()> {
                 }
             }
         }
-
-        // Future: Handle async operations (search, fetch streams, etc.)
-        // This is where we'd check channels for completed async tasks in TUI mode
     }
 
     Ok(())
@@ -307,57 +384,104 @@ fn render_content(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Render home screen with trending content
-fn render_home(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_home(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Theme::border())
-        .title(Span::styled(" ⚡ TRENDING ", Theme::title()));
+        .title(Span::styled(
+            format!(" ⚡ TRENDING ({}) ", app.home.results.len()),
+            Theme::title(),
+        ));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Placeholder for trending content
-    let help = Paragraph::new(vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Welcome to ", Theme::text()),
-            Span::styled(
-                "StreamTUI",
-                ratatui::style::Style::default()
-                    .fg(Theme::PRIMARY)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Your neon-soaked streaming companion",
-            Theme::dimmed(),
-        )),
-        Line::from(""),
-        Line::from(""),
-        Line::from(Span::styled("Quick Start:", Theme::accent())),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  /  ", Theme::keybind()),
-            Span::styled("Search for movies & shows", Theme::dimmed()),
-        ]),
-        Line::from(vec![
-            Span::styled("  ↑↓ ", Theme::keybind()),
-            Span::styled("Navigate lists", Theme::dimmed()),
-        ]),
-        Line::from(vec![
-            Span::styled("  ↵  ", Theme::keybind()),
-            Span::styled("Select item", Theme::dimmed()),
-        ]),
-        Line::from(vec![
-            Span::styled("  q  ", Theme::keybind()),
-            Span::styled("Quit", Theme::dimmed()),
-        ]),
-    ])
-    .alignment(Alignment::Center);
+    // Show loading state
+    if app.home.loading.is_loading() {
+        let loading = Paragraph::new("⟳ Loading trending content...")
+            .style(Theme::loading())
+            .alignment(Alignment::Center);
+        frame.render_widget(loading, inner);
+        return;
+    }
 
-    frame.render_widget(help, inner);
+    // Show empty state with help
+    if app.home.results.is_empty() {
+        let help = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Welcome to ", Theme::text()),
+                Span::styled(
+                    "StreamTUI",
+                    ratatui::style::Style::default()
+                        .fg(Theme::PRIMARY)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("Quick Start:", Theme::accent())),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  /  ", Theme::keybind()),
+                Span::styled("Search for movies & shows", Theme::dimmed()),
+            ]),
+            Line::from(vec![
+                Span::styled("  q  ", Theme::keybind()),
+                Span::styled("Quit", Theme::dimmed()),
+            ]),
+        ])
+        .alignment(Alignment::Center);
+        frame.render_widget(help, inner);
+        return;
+    }
+
+    // Show trending results list
+    let items: Vec<ListItem> = app
+        .home
+        .results
+        .iter()
+        .enumerate()
+        .map(|(i, result)| {
+            let is_selected = i == app.home.list.selected;
+            let marker = if is_selected { "▸ " } else { "  " };
+            let year_str = result.year.map(|y| format!(" ({})", y)).unwrap_or_default();
+            let type_str = match result.media_type {
+                crate::models::MediaType::Movie => "MOVIE",
+                crate::models::MediaType::Tv => "TV",
+            };
+
+            let line = Line::from(vec![
+                Span::styled(
+                    marker,
+                    if is_selected { Theme::accent() } else { Theme::dimmed() },
+                ),
+                Span::styled(
+                    &result.title,
+                    if is_selected { Theme::highlighted() } else { Theme::text() },
+                ),
+                Span::styled(year_str, Theme::year()),
+                Span::raw(" "),
+                Span::styled(format!("[{}]", type_str), Theme::secondary()),
+                Span::raw(" "),
+                Span::styled(
+                    format!("★ {:.1}", result.vote_average),
+                    if result.vote_average >= 7.0 {
+                        Theme::success()
+                    } else if result.vote_average >= 5.0 {
+                        Theme::warning()
+                    } else {
+                        Theme::dimmed()
+                    },
+                ),
+            ]);
+
+            ListItem::new(line)
+        })
+        .collect();
+
+    let list = List::new(items).style(Theme::text());
+    frame.render_widget(list, inner);
 }
 
 /// Render search results

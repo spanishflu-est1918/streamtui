@@ -5,6 +5,47 @@
 
 use crate::models::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tokio::sync::mpsc;
+
+// =============================================================================
+// Async Message Types
+// =============================================================================
+
+/// Commands sent from UI to async task spawner
+#[derive(Debug, Clone)]
+pub enum AppCommand {
+    /// Fetch trending content
+    FetchTrending,
+    /// Search for content
+    Search(String),
+    /// Fetch movie detail
+    FetchMovieDetail(u64),
+    /// Fetch TV detail
+    FetchTvDetail(u64),
+    /// Fetch streams for content
+    FetchStreams { imdb_id: String, season: Option<u8>, episode: Option<u8> },
+    /// Fetch subtitles
+    FetchSubtitles { imdb_id: String, lang: String },
+}
+
+/// Results sent from async tasks back to UI
+#[derive(Debug)]
+pub enum AppMessage {
+    /// Trending results loaded
+    TrendingLoaded(Vec<SearchResult>),
+    /// Search results loaded
+    SearchResults(Vec<SearchResult>),
+    /// Movie detail loaded
+    MovieDetailLoaded(MovieDetail),
+    /// TV detail loaded
+    TvDetailLoaded(TvDetail),
+    /// Streams loaded
+    StreamsLoaded(Vec<StreamSource>),
+    /// Subtitles loaded
+    SubtitlesLoaded(Vec<SubtitleResult>),
+    /// Error occurred
+    Error(String),
+}
 
 // =============================================================================
 // App State Enum
@@ -180,8 +221,19 @@ impl ListState {
 /// Home view state
 #[derive(Debug, Clone, Default)]
 pub struct HomeState {
-    /// Trending content list
+    /// Trending content results
+    pub results: Vec<SearchResult>,
+    /// Trending content list state
     pub list: ListState,
+    /// Loading state
+    pub loading: LoadingState,
+}
+
+impl HomeState {
+    /// Get currently selected trending item
+    pub fn selected_result(&self) -> Option<&SearchResult> {
+        self.results.get(self.list.selected)
+    }
 }
 
 /// Search view state
@@ -413,7 +465,6 @@ pub struct PlayingState {
 // =============================================================================
 
 /// Main application state
-#[derive(Debug)]
 pub struct App {
     /// Current state/screen
     pub state: AppState,
@@ -439,10 +490,22 @@ pub struct App {
     pub cast_devices: Vec<CastDevice>,
     /// Selected cast device index
     pub selected_device: Option<usize>,
+
+    // Async communication
+    /// Channel to send commands to async task spawner
+    pub cmd_tx: mpsc::UnboundedSender<AppCommand>,
 }
 
 impl Default for App {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl App {
+    /// Create a new App instance (for tests - commands are no-op)
+    pub fn new() -> Self {
+        let (cmd_tx, _) = mpsc::unbounded_channel();
         Self {
             state: AppState::Home,
             nav_stack: Vec::new(),
@@ -459,14 +522,78 @@ impl Default for App {
 
             cast_devices: Vec::new(),
             selected_device: None,
+
+            cmd_tx,
         }
     }
-}
 
-impl App {
-    /// Create a new App instance
-    pub fn new() -> Self {
-        Self::default()
+    /// Create a new App instance with async channel for TUI
+    /// Returns (App, command_receiver) - caller must handle commands
+    pub fn with_channels() -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+
+        let app = Self {
+            state: AppState::Home,
+            nav_stack: Vec::new(),
+            running: true,
+            input_mode: InputMode::Normal,
+            error: None,
+
+            home: HomeState::default(),
+            search: SearchState::default(),
+            detail: None,
+            sources: SourcesState::default(),
+            subtitles: SubtitlesState::default(),
+            playing: PlayingState::default(),
+
+            cast_devices: Vec::new(),
+            selected_device: None,
+
+            cmd_tx,
+        };
+
+        (app, cmd_rx)
+    }
+
+    /// Send a command to the async task spawner
+    pub fn send_command(&self, cmd: AppCommand) {
+        let _ = self.cmd_tx.send(cmd);
+    }
+
+    /// Handle an incoming async message
+    pub fn handle_message(&mut self, msg: AppMessage) {
+        match msg {
+            AppMessage::TrendingLoaded(results) => {
+                self.home.results = results;
+                self.home.list.set_len(self.home.results.len());
+                self.home.loading = LoadingState::Idle;
+            }
+            AppMessage::SearchResults(results) => {
+                self.search.set_results(results);
+            }
+            AppMessage::MovieDetailLoaded(detail) => {
+                self.detail = Some(DetailState::movie(detail));
+                self.navigate(AppState::Detail);
+            }
+            AppMessage::TvDetailLoaded(detail) => {
+                self.detail = Some(DetailState::tv(detail));
+                self.navigate(AppState::Detail);
+            }
+            AppMessage::StreamsLoaded(streams) => {
+                self.sources.set_sources(streams);
+            }
+            AppMessage::SubtitlesLoaded(subs) => {
+                self.subtitles.set_subtitles(subs);
+            }
+            AppMessage::Error(msg) => {
+                self.set_error(msg);
+                // Reset loading states
+                self.home.loading = LoadingState::Idle;
+                self.search.loading = LoadingState::Idle;
+                self.sources.loading = LoadingState::Idle;
+                self.subtitles.loading = LoadingState::Idle;
+            }
+        }
     }
 
     /// Navigate to a new state, pushing current to stack
@@ -560,7 +687,10 @@ impl App {
             KeyCode::Enter => {
                 // Submit search
                 self.input_mode = InputMode::Normal;
-                // Signal that search should be triggered
+                if !self.search.query.is_empty() {
+                    self.search.loading = LoadingState::Loading(Some("Searching...".into()));
+                    self.send_command(AppCommand::Search(self.search.query.clone()));
+                }
                 true
             }
             KeyCode::Char(c) => {
@@ -639,12 +769,19 @@ impl App {
                 self.home.list.down();
                 true
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('i') => {
                 // Open detail view for selected trending item
-                true
-            }
-            KeyCode::Char('i') => {
-                // Show info/detail
+                if let Some(result) = self.home.selected_result() {
+                    let id = result.id;
+                    match result.media_type {
+                        crate::models::MediaType::Movie => {
+                            self.send_command(AppCommand::FetchMovieDetail(id));
+                        }
+                        crate::models::MediaType::Tv => {
+                            self.send_command(AppCommand::FetchTvDetail(id));
+                        }
+                    }
+                }
                 true
             }
             _ => false,
@@ -661,12 +798,19 @@ impl App {
                 self.search.list.down();
                 true
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('i') => {
                 // Open detail view for selected result
-                true
-            }
-            KeyCode::Char('i') => {
-                // Show info/detail
+                if let Some(result) = self.search.selected_result() {
+                    let id = result.id;
+                    match result.media_type {
+                        crate::models::MediaType::Movie => {
+                            self.send_command(AppCommand::FetchMovieDetail(id));
+                        }
+                        crate::models::MediaType::Tv => {
+                            self.send_command(AppCommand::FetchTvDetail(id));
+                        }
+                    }
+                }
                 true
             }
             KeyCode::PageUp => {

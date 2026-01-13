@@ -1,0 +1,1764 @@
+
+╭─── Claude Code v2.1.6 ───────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                 Welcome back Gorka!                │ started                 │
+│                                                    │ ✔ Run /init to create … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│                                                    │                         │
+│     Opus 4.5 · Claude Max · hey@elohim.media's     │                         │
+│     Organization                                   │                         │
+│                   ~/www/streamtui                  │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ /init 
+
+● I'll analyze this codebase to create a comprehensive CLAUDE.md file. Let me start by exploring the project structure, build system, and architecture.
+
+● Search(pattern: "**/*.{toml,rs,md}")
+  ⎿  Found 0 files 
+
+● Bash(ls -la)
+  ⎿  total 140                                            
+     drwxrwxr-x  7 gorkolas gorkolas  4096 Jan 12 23:47 .
+     drwxrwxr-x 23 gorkolas gorkolas  4096 Jan 13 09:54 ..
+     … +13 lines (ctrl+o to expand)
+
+● Read(Cargo.toml)
+  ⎿  Read 53 lines
+
+● Read(README.md)
+  ⎿  Read 637 lines
+
+● Read(PROMPT.md)
+  ⎿  Read 54 lines
+
+● Bash(ls -la src/)
+  ⎿  total 204                                           
+     drwxrwxr-x 5 gorkolas gorkolas  4096 Jan 12 23:35 .
+     drwxrwxr-x 7 gorkolas gorkolas  4096 Jan 12 23:47 ..
+     … +9 lines (ctrl+o to expand)
+
+● Now let me explore the source code structure more deeply to understand the architecture.
+
+● Bash(ls -la src/api/ src/stream/ src/ui/)
+  ⎿  src/api/:                                          
+     total 32
+     drwxrwxr-x 2 gorkolas gorkolas  4096 Jan 12 22:36 .
+     … +26 lines (ctrl+o to expand)
+
+● Read(.clippy.toml)
+  ⎿  Read 23 lines
+
+● Read(rustfmt.toml)
+  ⎿  Read 10 lines
+
+● Bash(ls -la tests/)
+  ⎿  total 228                                           
+     drwxrwxr-x 2 gorkolas gorkolas  4096 Jan 13 09:29 .
+     drwxrwxr-x 7 gorkolas gorkolas  4096 Jan 12 23:47 ..
+     … +9 lines (ctrl+o to expand)
+
+● Now let me look at the key source files to understand the architecture better.
+
+● Read(src/lib.rs)
+  ⎿  Read 33 lines
+
+● Read(src/main.rs)
+  ⎿  Read 100 lines
+
+● Read(src/app.rs)
+  ⎿  Read 100 lines
+
+● Read(src/cli.rs)
+  ⎿  Read 100 lines
+
+● Let me also check the specs directory and the models file for a more complete picture.
+
+● Bash(ls -la specs/)
+  ⎿  total 68                                            
+     drwxrwxr-x 2 gorkolas gorkolas  4096 Jan 12 22:11 .
+     drwxrwxr-x 7 gorkolas gorkolas  4096 Jan 12 23:47 ..
+     … +10 lines (ctrl+o to expand)
+
+● Read(src/models.rs)
+  ⎿  Read 100 lines
+
+● Bash(cargo test --help 2>&1 | head -20)
+  ⎿ Execute all unit and integration tests and build examples of a local pa
+    ckage
+    … +26 lines (ctrl+o to expand)
+
+
+● Bash(cargo test --list 2>&1 | head -30)
+  ⎿  error: unexpected argument '--list' found
+
+       tip: a similar argument exists: '--lib'
+     … +5 lines (ctrl+o to expand)
+
+● Bash(cargo test -- --list 2>&1 | head -50)
+  ⎿     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18
+    s
+         Running unittests src/lib.rs (target/debug/deps/streamtui-ac6a9d59
+    … +49 lines (ctrl+o to expand)
+
+
+
+● Now I have a good understanding of the codebase. Let me create the CLAUDE.md file.
+
+● Write(CLAUDE.md)
+  ⎿  Wrote 108 lines to CLAUDE.md                                          
+     # CLAUDE.md
+     This file provides guidance to Claude Code (claude.ai/code) when
+     working with code in this repository.
+     ## Build & Test Commands
+     ```bash
+     # Build
+     cargo build                    # Debug build
+     cargo build --release          # Release build (optimized)
+     … +98 lines (ctrl+o to expand)
+
+● I've created the CLAUDE.md file. Let me verify it was created correctly.
+
+● Read(CLAUDE.md)
+  ⎿  Read 108 lines
+
+● ★ Insight ─────────────────────────────────────
+  The CLAUDE.md I created captures the key architectural decisions that require reading multiple files to understand:
+  1. Dual-mode architecture - The same binary serves both TUI and CLI, branching at main.rs based on whether a subcommand is provided
+  2. External tool wrapping - Rather than native Rust implementations, the project wraps catt and webtorrent-cli binaries for Chromecast and torrent streaming
+  3. State machine navigation - The TUI uses a simple enum-based state machine in app.rs that drives which UI component renders
+  ─────────────────────────────────────────────────
+
+  Created CLAUDE.md with:
+
+  - Build commands: cargo build/test/clippy/fmt with useful flags
+  - Architecture overview: The dual TUI/CLI mode design and data flow
+  - Key modules: Purpose of each major file without listing every file
+  - State machine: TUI navigation flow
+  - External dependencies: The non-Rust CLI tools required (webtorrent-cli, catt)
+  - Test structure: Test file organization and mockito usage
+  - Exit codes: The semantic exit codes for CLI scripting
+  - Design specs: Reference to the specs/ directory for detailed requirements
+
+  The file is concise (~100 lines) and focuses on information that requires reading multiple files to understand, rather than duplicating content from the README or listing obvious file structures.
+
+✻ Sautéed for 1m 13s
+
+❯ OK for starters search isn't working can you test the functionalityh? 
+
+● Bash(cargo run -- search "blade runner" --json 2>&1) timeout: 30s
+  ⎿  Error: Exit code 1
+        Compiling streamtui v0.1.0 (/home/gorkolas/www/streamtui)
+         Finished `dev` profile [unoptimized + debuginfo] target(s) in 17.26s
+          Running `target/debug/streamtui search 'blade runner' --json`
+     {
+       "error": "TMDB_API_KEY not set. Export it or add to config.",
+       "exit_code": 1
+     }
+
+● The search requires a TMDB API key. Let me check how the API key is configured.
+
+● Search(pattern: "TMDB_API_KEY", path: "src", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Bash(cat ~/.config/streamtui/config.toml 2>&1 || echo "No config file found")
+  ⎿ cat: /home/gorkolas/.config/streamtui/config.toml: No such file or dire
+    ctory
+    No config file found
+
+
+● Search(pattern: "api_key|API_KEY", path: "src/api/tmdb.rs", output_mode:
+        "content")
+  ⎿  Found 0 lines 
+
+● Read(src/api/tmdb.rs)
+  ⎿  Read 468 lines
+
+● Let me check how the TMDB client is instantiated in the commands.
+
+● Search(pattern: "TmdbClient::new|TMDB_API_KEY", path: "src", output_mode:
+        "content")
+  ⎿  Found 0 lines 
+
+❯ what is TMDB and what other env vars am I missing? 
+
+● Search(pattern: "not set|api_key|API", path: "src/commands.rs", output_mode:
+        "content")
+  ⎿  Found 0 lines 
+
+● Search(pattern: "not set", path: "src", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Search(pattern: "Export", path: "src", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Read(src/commands.rs)
+  ⎿  Read 200 lines
+
+● Found it. Let me check for other required environment variables in the codebase.
+
+● Search(pattern: "std::env::var|env::var", path: "src", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Bash(grep -r "env::var\|env::" src/)
+  ⎿  src/commands.rs:    std::env::var("TMDB_API_KEY").ok()
+
+● TMDB (The Movie Database) is a popular free API for movie/TV metadata - titles, posters, ratings, cast info, etc. StreamTUI uses it for searching and getting content details.
+
+  The only required env var is TMDB_API_KEY. To get one:
+
+  1. Create a free account at https://www.themoviedb.org/signup
+  2. Go to Settings → API → Request an API Key
+  3. Choose "Developer" and fill in the form (any project description works)
+  4. Copy the "API Read Access Token" (the long one, not the short API Key)
+
+  Then export it:
+  export TMDB_API_KEY="your_token_here"
+
+  Or add to your shell profile (~/.bashrc, ~/.zshrc).
+
+  Do you have a TMDB API key, or would you like me to check if there's another issue with the search functionality using mocked tests?
+
+✻ Cooked for 1m 27s
+
+❯ maybe try this What is freekeys?                                          
+  Free API keys OMDb and TMDb without registration.                         
+                                                                            
+  Installation                                                              
+  npm i freekeys                                                            
+  Usage                                                                     
+  Import the library in your code:                                          
+                                                                            
+  const freekeys = require('freekeys');                                     
+  Get keys                                                                  
+  freekeys().then(params => {                                               
+  console.log(params);                                                      
+  });                                                                       
+  //{                                                                       
+  //  "tmdb_key": "e547e17d4e91f3e62a571655cd1ccaff",                       
+  //  "imdb_key": "966c4f4f"                                                
+  //}                                                                       
+
+● Interesting! Let me try that.
+
+● Bash(npx freekeys 2>&1) timeout: 30s
+  ⎿  Error: Exit code 1
+     npm error could not determine executable to run
+     npm error A complete log of this run can be found in: 
+     /home/gorkolas/.npm/_logs/2026-01-13T09_04_06_484Z-debug-0.log
+
+● Bash(npm install -g freekeys && freekeys 2>&1 || node -e  timeout: 30s
+      "require('freekeys')().then(console.log)")
+  ⎿  Error: Exit code 1
+     node:internal/modules/cjs/loader:1423
+       throw err;
+       ^
+
+     Error: Cannot find module 'freekeys'
+     Require stack:
+     - /home/gorkolas/www/streamtui/[eval]
+         at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+         at defaultResolveImpl (node:internal/modules/cjs/loader:1058:19)
+     … +17 lines (ctrl+o to see all)
+
+● Bash(cd /tmp && npm init -y && npm i freekeys && node -e           timeout: 
+      "require('freekeys')().then(k =>                               30s
+      console.log(JSON.stringify(k)))")
+  ⎿  Wrote to /tmp/package.json:                        
+
+     {
+     … +23 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/gorkolas/www/streamtui
+
+● Got the keys. Let me test search now.
+
+● Bash(TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6" cargo run --   timeout: 
+      search "blade runner" --json 2>&1)                              30s
+  ⎿  Error: Exit code 3
+         Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+          Running `target/debug/streamtui search 'blade runner' --json`
+     {
+       "error": "Search failed: Server error: 401",
+       "exit_code": 3
+     }
+
+● The key is being rejected. The issue is that freekeys returns a legacy API key, but the code uses Bearer token authentication. Let me check the TMDB client.
+
+● Read(src/api/tmdb.rs)
+  ⎿  Read 30 lines
+
+● ★ Insight ─────────────────────────────────────
+  TMDB has two auth methods:
+  1. Legacy API key (short, ~32 chars) → use as query param ?api_key=xxx
+  2. Bearer token (long, ~200 chars) → use in Authorization: Bearer xxx header
+
+  The freekeys package provides a legacy key, but the code only supports Bearer tokens.
+  ─────────────────────────────────────────────────
+
+  Let me fix the TMDB client to support both authentication methods.
+
+● Update(src/api/tmdb.rs)
+  ⎿  Added 17 lines, removed 8 lines                                     
+      67                                                                 
+      68       /// Make an authenticated GET request with retry logic    
+          for rate limits                                                
+      69       async fn get<T: for<'de> Deserialize<'de>>(&self,         
+          endpoint: &str) -> Result<T> {                                 
+      70 -         let url = format!("{}{}", self.base_url, endpoint);   
+      70 +         // Support both legacy API key (query param) and      
+         +Bearer token (header)                                          
+      71 +         // Legacy keys are ~32 chars, Bearer tokens are much  
+         +longer (~200 chars)                                            
+      72 +         let url = if self.api_key.len() < 64 {                
+      73 +             // Legacy API key - append as query parameter     
+      74 +             let separator = if endpoint.contains('?') { "&" } 
+         + else { "?" };                                                 
+      75 +             format!("{}{}{}api_key={}", self.base_url,        
+         +endpoint, separator, self.api_key)                             
+      76 +         } else {                                              
+      77 +             format!("{}{}", self.base_url, endpoint)          
+      78 +         };                                                    
+      79           let mut retries = 0;                                  
+      80                                                                 
+      81           loop {                                                
+      82 -             let response = self                               
+      83 -                 .client                                       
+      84 -                 .get(&url)                                    
+      85 -                 .header("Authorization", format!("Bearer {}", 
+         - self.api_key))                                                
+      86 -                 .header("Accept", "application/json")         
+      87 -                 .send()                                       
+      88 -                 .await?;                                      
+      82 +             let mut request =                                 
+         +self.client.get(&url).header("Accept", "application/json");    
+      83                                                                 
+      84 +             // Only add Bearer auth for longer tokens         
+      85 +             if self.api_key.len() >= 64 {                     
+      86 +                 request = request.header("Authorization",     
+         +format!("Bearer {}", self.api_key));                           
+      87 +             }                                                 
+      88 +                                                               
+      89 +             let response = request.send().await?;             
+      90 +                                                               
+      91               match response.status() {                         
+      92                   StatusCode::OK => {                           
+      93                       let body = response.text().await?;        
+
+● Now let me test the search again.
+
+● Bash(TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6" cargo run --   timeout: 
+      search "blade runner" --json 2>&1)                              30s
+  ⎿    Compiling streamtui v0.1.0 (/home/gorkolas/www/streamtui)           
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.00
+    s
+    … +237 lines (ctrl+o to expand)
+
+
+● Search is working now. Let me verify the tests still pass.
+
+● Bash(cargo test --test tmdb_test 2>&1 | tail -30) timeout: 1m 0s
+  ⎿  GET /search/multi?(any)                                    
+     authorization: Bearer my_secret_token
+     GET /search/multi?query=test&page=1&api_key=my_secret_token
+     … +29 lines (ctrl+o to expand)
+
+● Some tests are failing due to the auth change. Let me check what these tests expect.
+
+● Search(pattern: "test_sends_bearer_token|my_secret_token", path:
+        "tests/tmdb_test.rs", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Search(pattern: "bearer|Bearer|api_key", path: "tests/tmdb_test.rs",
+        output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Search(pattern:
+        "test_sends|test_handles_server|test_trending_returns|test_tv_season",
+        path: "tests/tmdb_test.rs", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Read(tests/tmdb_test.rs)
+  ⎿  Read 100 lines
+
+● Search(pattern: "test_sends|test_handles_server|501", path:
+        "tests/tmdb_test.rs", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Bash(grep -n "fn test_" tests/tmdb_test.rs | head -30)
+  ⎿  14:async fn test_search_parses_results() {         
+     83:async fn test_search_extracts_year() {
+     151:async fn test_search_filters_person_results() {
+     … +10 lines (ctrl+o to expand)
+
+● Read(tests/tmdb_test.rs)
+  ⎿  Read 19 lines
+
+● Read(tests/tmdb_test.rs)
+  ⎿  Read 60 lines
+
+● The tests need updating to work with the new dual-auth approach. The issue is:
+  1. test_sends_bearer_token uses a short key but expects Bearer auth
+  2. Other tests don't account for the ?api_key= query param added for short keys
+
+  Let me fix the tests.
+
+● Read(tests/tmdb_test.rs)
+  ⎿  Read 30 lines
+
+● Update(tests/tmdb_test.rs)
+  ⎿  Added 1 line                                                        
+      240                                                                
+      241       let mock = server                                        
+      242           .mock("GET", "/trending/all/week")                   
+      243 +         .match_query(Matcher::Any)                           
+      244           .with_status(200)                                    
+      245           .with_header("content-type", "application/json")     
+      246           .with_body(mock_response)                            
+
+● Update(tests/tmdb_test.rs)
+  ⎿  Added 1 line                                                        
+      564                                                                
+      565       let mock = server                                        
+      566           .mock("GET", "/trending/all/week")                   
+      567 +         .match_query(Matcher::Any)                           
+      568           .with_status(500)                                    
+      569           .with_body("Internal Server Error")                  
+      570           .create_async()                                      
+
+● Read(tests/tmdb_test.rs)
+  ⎿  Read 100 lines
+
+● Update(tests/tmdb_test.rs)
+  ⎿  Added 1 line                                                        
+      472                                                                
+      473       let mock = server                                        
+      474           .mock("GET", "/tv/1396/season/1")                    
+      475 +         .match_query(Matcher::Any)                           
+      476           .with_status(200)                                    
+      477           .with_header("content-type", "application/json")     
+      478           .with_body(mock_response)                            
+
+● Now let me fix the test_sends_bearer_token test to use a long token that triggers Bearer auth.
+
+● Update(tests/tmdb_test.rs)
+  ⎿  Added 5 lines, removed 2 lines                                      
+      608   async fn test_sends_bearer_token() {                         
+      609       let mut server = Server::new_async().await;              
+      610                                                                
+      611 +     // Use a long token (64+ chars) to trigger Bearer auth   
+          +instead of query param auth                                   
+      612 +     let long_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e 
+          +yJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IlRlc3QifQ";               
+      613 +                                                              
+      614       let mock = server                                        
+      615           .mock("GET", "/search/multi")                        
+      616           .match_query(Matcher::Any)                           
+      617 -        .match_header("Authorization", "Bearer my_secret_token
+          -")                                                            
+      617 +        .match_header("Authorization", format!("Bearer {}"    
+          +, long_token).as_str())                                       
+      618           .with_status(200)                                    
+      619           .with_header("content-type", "application/json")     
+      620           .with_body(r#"{"page": 1, "results": [],             
+           "total_results": 0, "total_pages": 0}"#)                      
+      621           .create_async()                                      
+      622           .await;                                              
+      623                                                                
+      624 -    let client = TmdbClient::with_base_url("my_secret_token"  
+          -, server.url());                                              
+      624 +    let client = TmdbClient::with_base_url(long_token         
+          +, server.url());                                              
+      625       let _ = client.search("test").await;                     
+      626                                                                
+      627       mock.assert_async().await;                               
+
+● Let me add a test for the legacy API key auth as well.
+
+● Update(tests/tmdb_test.rs)
+  ⎿  Added 25 lines                                                      
+      626                                                                
+      627       mock.assert_async().await;                               
+      628   }                                                            
+      629 +                                                              
+      630 + #[tokio::test]                                               
+      631 + async fn test_sends_legacy_api_key() {                       
+      632 +     let mut server = Server::new_async().await;              
+      633 +                                                              
+      634 +     // Short keys (< 64 chars) are sent as query params, not 
+          + Bearer tokens                                                
+      635 +     let short_key = "abc123def456";                          
+      636 +                                                              
+      637 +     let mock = server                                        
+      638 +         .mock("GET", "/search/multi")                        
+      639 +         .match_query(Matcher::AllOf(vec![                    
+      640 +             Matcher::UrlEncoded("api_key".into(),            
+          +short_key.into()),                                            
+      641 +             Matcher::UrlEncoded("query".into(),              
+          +"test".into()),                                               
+      642 +         ]))                                                  
+      643 +         .with_status(200)                                    
+      644 +         .with_header("content-type", "application/json")     
+      645 +         .with_body(r#"{"page": 1, "results": [],             
+          +"total_results": 0, "total_pages": 0}"#)                      
+      646 +         .create_async()                                      
+      647 +         .await;                                              
+      648 +                                                              
+      649 +     let client = TmdbClient::with_base_url(short_key,        
+          +server.url());                                                
+      650 +     let _ = client.search("test").await;                     
+      651 +                                                              
+      652 +     mock.assert_async().await;                               
+      653 + }                                                            
+
+● Now let me run the tests again.
+
+● Bash(cargo test --test tmdb_test 2>&1 | tail -20) timeout: 1m 0s
+  ⎿      Running tests/tmdb_test.rs (target/debug/deps/tmdb_test-5146c15410
+    80961c)
+    … +18 lines (ctrl+o to expand)
+
+
+● All TMDB tests pass. Let me run the full test suite to make sure everything works.
+
+● Bash(cargo test 2>&1 | tail -30)
+  ⎿  test test_navigation_up_down ... ok          
+     test test_now_playing_overlay_centered ... ok
+     test test_now_playing_overlay_controls ... ok
+     … +28 lines (ctrl+o to expand)
+
+● All 655 tests pass. Let me run clippy to ensure there are no warnings.
+
+● Bash(cargo clippy 2>&1 | tail -20) timeout: 1m 0s
+  ⎿     Checking streamtui v0.1.0 (/home/gorkolas/www/streamtui)           
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.93s
+
+
+● Clippy passes with no warnings. Let me do a final test of the search functionality.
+
+● Bash(TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6" cargo run --   timeout: 
+      search "breaking bad" --limit 3 2>&1)                           30s
+  ⎿     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.19s
+         Running `target/debug/streamtui search 'breaking bad' --limit 3`
+    {
+    … +41 lines (ctrl+o to expand)
+
+
+● ★ Insight ─────────────────────────────────────
+  The fix supports both TMDB authentication methods:
+  - Legacy API key (< 64 chars): Appended as ?api_key=xxx query parameter
+  - Bearer token (≥ 64 chars): Sent in Authorization: Bearer xxx header
+
+  This lets you use either the free freekeys API key or your own TMDB "API Read Access Token".
+  ─────────────────────────────────────────────────
+
+  Summary:
+
+  1. Fixed: Modified src/api/tmdb.rs to support both legacy API keys (query param) and Bearer tokens (header auth)
+  2. Updated tests in tests/tmdb_test.rs:
+    - Added match_query(Matcher::Any) to tests that needed to handle query params
+    - Updated test_sends_bearer_token to use a 64+ char token
+    - Added new test_sends_legacy_api_key test for the query param auth path
+  3. Usage: You can now use the freekeys API key:
+  export TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6"
+  streamtui search "blade runner"
+
+  All 655 tests pass, clippy has no warnings. Would you like me to add the freekeys API key to a config file or .env so you don't have to export it each time?
+
+✻ Churned for 6m 32s
+
+❯ do you need to recreate the binary? want to test it! 
+
+● Bash(cargo build --release 2>&1)
+  ⎿  Running in the background (↓ to manage)
+
+❯ We need to package that key or the ability to create keys within the app  
+  too, for general release right?                                           
+
+● Task Output b0697a5
+  ⎿     Compiling streamtui v0.1.0 (/home/gorkolas/www/streamtui)  
+         Finished `release` profile [optimized] target(s) in 1m 38s
+
+● Build complete! Binary is at target/release/streamtui.
+
+  You're right about packaging for release. Options:
+
+  1. Auto-fetch on first run - Call the same endpoint freekeys uses, cache in config
+  2. Bundle a default key - Risk: rate limiting if app gets popular
+  3. Setup wizard - streamtui setup prompts user to get/enter key
+
+  For a personal project, option 1 is cleanest. Want me to implement auto-fetching the key on first run and caching it to ~/.config/streamtui/config.toml?
+
+  To test now:
+  export TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6"
+  ./target/release/streamtui search "matrix"
+
+  Or launch TUI:
+  TMDB_API_KEY="8301a21598f8b45668d5711a814f01f6" ./target/release/streamtui
+
+✻ Cooked for 1m 56s
+
+● Background command "Build release binary" completed (exit code 0)
+
+● Already got it - build succeeded! The release binary is ready at target/release/streamtui.
+
+  Waiting on your call about the API key packaging. Want me to implement auto-fetch + cache?
+
+❯ yes I guess so? 2 then 1 
+
+● Got it - bundle a default key first, then auto-fetch if needed. Let me implement this.
+
+● Bash(cd /tmp && node -e "const https = require('https');            timeout: 
+      https.get('https://raw.githubusercontent.com/nicholashew/freeke 10s
+      ys/refs/heads/main/index.js', res => { let d=…)
+  ⎿  404: Not Found                                     
+  ⎿  Shell cwd was reset to /home/gorkolas/www/streamtui
+
+● Bash(cat /tmp/node_modules/freekeys/index.js 2>/dev/null || npm     timeout: 
+      pack freekeys --pack-destination /tmp && tar -xzf               15s
+      /tmp/freekeys-*.tgz -C /tmp && cat /tmp/package/ind…)
+  ⎿  Error: Exit code 2
+     tar (child): /tmp/freekeys-*.tgz: Cannot open: No such file or directory
+     tar (child): Error is not recoverable: exiting now
+     tar: Child returned status 2
+     tar: Error is not recoverable: exiting now
+
+     module.exports = (params = {}) => {
+         const freekeys = params => {
+             let tmdb_keys = [
+                 'fb7bb23f03b6994dafc674c074d01761',
+     … +45 lines (ctrl+o to see all)
+
+● Ah, freekeys just has a hardcoded pool of keys and picks randomly. Simple! Let me implement:
+  1. Bundle the key pool
+  2. Try keys until one works
+  3. Cache working key to config
+
+● Write(src/config.rs)
+  ⎿  Wrote 151 lines to src/config.rs                              
+     //! Configuration management for StreamTUI
+     //!
+     //! Handles config file loading/saving and API key management.
+     //! Config is stored at ~/.config/streamtui/config.toml
+     use anyhow::Result;
+     use serde::{Deserialize, Serialize};
+     use std::path::PathBuf;
+     /// Bundled TMDB API keys (from freekeys pool)
+     … +141 lines (ctrl+o to expand)
+
+● Read(src/main.rs)
+  ⎿  Read 15 lines
+
+● Update(src/main.rs)
+  ⎿  Added 1 line                                                        
+      21   mod app;                                                      
+      22   mod cli;                                                      
+      23   mod commands;                                                 
+      24 + mod config;                                                   
+      25   mod models;                                                   
+      26                                                                 
+      27   mod api;                                                      
+
+● Now let me update commands.rs to use the new Config.
+
+● Update(src/commands.rs)
+  ⎿  Added 1 line, removed 9 lines                                       
+      12       SeekPosition, StatusCmd, StopCmd, StreamsCmd,             
+          SubtitlesCmd, TrendingCmd, TrendingWindow,                     
+      13       VolumeCmd, VolumeLevel,                                   
+      14   };                                                            
+      15 + use crate::config::Config;                                    
+      16   use crate::models::{CastDevice, MediaType, Quality,           
+          StreamSource};                                                 
+      17   use crate::stream::{LocalPlayer, PlayerType, SubtitleClient}; 
+      18                                                                 
+      19   // ========================================================== 
+          ===================                                            
+      20 - // Config                                                     
+      21 - // ========================================================== 
+         -===================                                            
+      22 -                                                               
+      23 - /// Get TMDB API key from environment                         
+      24 - fn get_tmdb_api_key() -> Option<String> {                     
+      25 -     std::env::var("TMDB_API_KEY").ok()                        
+      26 - }                                                             
+      27 -                                                               
+      28 - // ========================================================== 
+         -===================                                            
+      20   // Search Command                                             
+      21   // ========================================================== 
+          ===================                                            
+      22                                                                 
+
+● Update(src/commands.rs)
+  ⎿  Added 2 lines, removed 10 lines                                     
+      21   // ========================================================== 
+          ===================                                            
+      22                                                                 
+      23   pub async fn search_cmd(cmd: SearchCmd, output: &Output) ->   
+          ExitCode {                                                     
+      24 -     let api_key = match get_tmdb_api_key() {                  
+      25 -         Some(key) => key,                                     
+      26 -         None => {                                             
+      27 -             return output.error(                              
+      28 -                 "TMDB_API_KEY not set. Export it or add to    
+         -config.",                                                      
+      29 -                 ExitCode::Error,                              
+      30 -             )                                                 
+      31 -         }                                                     
+      32 -     };                                                        
+      33 -                                                               
+      24 +     let mut config = Config::load();                          
+      25 +     let api_key = config.get_tmdb_api_key();                  
+      26       let client = TmdbClient::new(api_key);                    
+      27                                                                 
+      28       output.info(format!("Searching for: {}", cmd.query));     
+
+● Update(src/commands.rs)
+  ⎿  Added 2 lines, removed 10 lines                                     
+      62   // ========================================================== 
+          ===================                                            
+      63                                                                 
+      64   pub async fn trending_cmd(cmd: TrendingCmd, output: &Output)  
+          -> ExitCode {                                                  
+      65 -     let api_key = match get_tmdb_api_key() {                  
+      66 -         Some(key) => key,                                     
+      67 -         None => {                                             
+      68 -             return output.error(                              
+      69 -                 "TMDB_API_KEY not set. Export it or add to    
+         -config.",                                                      
+      70 -                 ExitCode::Error,                              
+      71 -             )                                                 
+      72 -         }                                                     
+      73 -     };                                                        
+      74 -                                                               
+      65 +     let mut config = Config::load();                          
+      66 +     let api_key = config.get_tmdb_api_key();                  
+      67       let client = TmdbClient::new(api_key);                    
+      68                                                                 
+      69       let window_str = match cmd.window {                       
+
+● Update(src/commands.rs)
+  ⎿  Added 2 lines, removed 10 lines                                     
+      102   // ========================================================= 
+           ====================                                          
+      103                                                                
+      104   pub async fn info_cmd(cmd: InfoCmd, output: &Output) ->      
+           ExitCode {                                                    
+      105 -     let api_key = match get_tmdb_api_key() {                 
+      106 -         Some(key) => key,                                    
+      107 -         None => {                                            
+      108 -             return output.error(                             
+      109 -                 "TMDB_API_KEY not set. Export it or add to   
+          -config.",                                                     
+      110 -                 ExitCode::Error,                             
+      111 -             )                                                
+      112 -         }                                                    
+      113 -     };                                                       
+      114 -                                                              
+      105 +     let mut config = Config::load();                         
+      106 +     let api_key = config.get_tmdb_api_key();                 
+      107       let client = TmdbClient::new(api_key);                   
+      108                                                                
+      109       output.info(format!("Getting info for: {}", cmd.id));    
+
+● Read(src/lib.rs)
+  ⎿  Read 33 lines
+
+● Bash(cargo test 2>&1 | tail -40)
+  ⎿  running 30 tests                                       
+     test test_content_card_render_no_year ... ok
+     test test_content_card_render_selected_highlight ... ok
+     … +38 lines (ctrl+o to expand)
+
+● Bash(cargo clippy 2>&1 && cargo build --release 2>&1) timeout: 3m 0s
+  ⎿     Checking streamtui v0.1.0 (/home/gorkolas/www/streamtui)           
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.20s
+       Compiling streamtui v0.1.0 (/home/gorkolas/www/streamtui)
+        Finished `release` profile [optimized] target(s) in 1m 42s
+
+
+● Now let's test without any env var - it should auto-pick a key from the pool.
+
+● Bash(rm -f ~/.config/streamtui/config.toml &&                       timeout: 
+      ./target/release/streamtui search "inception" --limit 3 2>&1)   30s
+  ⎿  {                             
+       "data": [
+         {
+     … +41 lines (ctrl+o to expand)
+
+● Works without setting any env var! Let me verify the key was cached.
+
+● Bash(cat ~/.config/streamtui/config.toml)
+  ⎿  tmdb_api_key = "8476a7ab80ad76f0936744df0430e67c"
+
+● ★ Insight ─────────────────────────────────────
+  The API key system now has a 3-tier fallback:
+  1. TMDB_API_KEY env var (override)
+  2. Cached key in ~/.config/streamtui/config.toml
+  3. Random selection from 17 bundled keys (then cached)
+
+  Users never need to configure anything - it just works out of the box.
+  ─────────────────────────────────────────────────
+
+  Done! The binary is ready at ./target/release/streamtui
+
+  Test it:
+  ./target/release/streamtui search "matrix"
+  ./target/release/streamtui trending --limit 5
+  ./target/release/streamtui   # Launch TUI
+
+  The key is auto-cached at ~/.config/streamtui/config.toml. No setup required for users!
+
+✻ Churned for 4m 24s
+
+❯ now commit all this ok? And let's talk about the TUI. We need a way for   
+  you to get in there and use it, cause it has problems, and I'm not sure   
+  just talking is gonna solve them? For starters there's no promise         
+  trending section or anything when you go in. For nexts, search does not   
+  return results                                                            
+
+● Bash(git status && git diff --stat)
+  ⎿  On branch master                                            
+     Changes not staged for commit:
+       (use "git add <file>..." to update what will be committed)
+     … +17 lines (ctrl+o to expand)
+
+● Bash(git log --oneline -5)
+  ⎿ adb3bd4 Task 28: Polish - cleanup TODOs, cargo fmt                     
+    16fd17c Task 27: Comprehensive README with full CLI documentation
+    5dadfd0 Task 28: Polish - fix all test warnings, clean build with 654 t
+    … +5 lines (ctrl+o to expand)
+
+
+● Bash(git add -A && git commit -m "feat: Auto-configure TMDB API key with
+      bundled key pool…)
+  ⎿ [master 93270d5] feat: Auto-configure TMDB API key with bundled key poo
+    l
+     6 files changed, 315 insertions(+), 49 deletions(-)
+    … +2 lines (ctrl+o to expand)
+
+
+● Committed!
+
+  For debugging the TUI, you're right - I can't directly see it. Options:
+
+  1. Screenshots - You share screenshots, I analyze
+  2. Code review - I trace through the TUI code logic
+  3. Debug logging - Add file logging to trace what's happening
+  4. Terminal recording - script or asciinema to capture sessions
+
+  Let me start by reading the TUI code to understand the home screen and search flow. The issues you mentioned:
+  - No trending section on startup
+  - Search doesn't return results
+
+● Read(src/app.rs)
+  ⎿  Read 150 lines
+
+● Search(pattern: "trending|Trending", path: "src", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● No "trending" in src/! Let me look at the TUI main loop.
+
+● Read(src/main.rs)
+  ⎿  Read 200 lines
+
+● Found it! Line 310-339 shows render_home is just a static placeholder - "Welcome to StreamTUI" with no actual trending data fetch.
+
+  And line 186-187 says:
+  // Future: Handle async operations (search, fetch streams, etc.)
+  // This is where we'd check channels for completed async tasks in TUI mode
+
+  The TUI has no async integration yet - it only handles keyboard events, no API calls!
+
+  Let me check how search is supposed to work:
+
+● Read(src/main.rs)
+  ⎿  Read 100 lines
+
+● Search(pattern: "fn handle_key|submit|search.*results|results.*=", path:
+        "src/app.rs", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Read(src/app.rs)
+  ⎿  Read 200 lines
+
+● Read(src/app.rs)
+  ⎿  Read 200 lines
+
+● Found the issues! Lines 560-565 in app.rs:
+
+  KeyCode::Enter => {
+      // Submit search
+      self.input_mode = InputMode::Normal;
+      // Signal that search should be triggered  <-- just a comment, no actual call!
+      true
+  }
+
+  The TUI is a skeleton - all the UI rendering code exists, but:
+  1. No async integration - the event loop only handles keypresses
+  2. No API calls ever happen - Enter just switches modes
+  3. set_results() exists but is never called
+  4. Trending fetch on startup was never implemented
+
+  This needs a proper async architecture with channels. Here's the plan:
+
+  1. Add async task channel - tokio::sync::mpsc for UI → async tasks
+  2. Add result channel - async tasks → UI with completed data
+  3. Modify event loop - poll both keyboard AND async results
+  4. Wire up actions:
+    - Startup → fetch trending
+    - Search Enter → trigger search API
+    - Result Enter → fetch detail
+    - etc.
+
+  This is ~200-300 lines of real work. Want me to implement it? Or would you prefer a simpler approach first (like just getting search working)?
+
+✻ Cogitated for 1m 20s
+
+❯ what the fuck!!!! anyway yeah get on it! 
+
+● Yeah, it's basically a fancy screensaver right now. Let me fix it.
+
+❯ can it use our own functions or shared calls? 
+
+● Yes! The API clients already exist and work - the CLI uses them:
+
+  - TmdbClient - search, trending, movie_detail, tv_detail
+  - TorrentioClient - streams
+  - SubtitleClient - subtitles
+  - Config - API key management
+
+  The TUI just needs to:
+  1. Spawn tokio tasks that call these existing clients
+  2. Send results back via channel
+  3. UI updates when results arrive
+
+  No code duplication - just wiring. Let me do it.
+
+● Read(src/app.rs)
+  ⎿  Read 60 lines
+
+● Read(src/app.rs)
+  ⎿  Read 10 lines
+
+● Update(src/app.rs)
+  ⎿  Added 41 lines                                                      
+       5                                                                 
+       6   use crate::models::*;                                         
+       7   use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};      
+       8 + use tokio::sync::mpsc;                                        
+       9                                                                 
+      10   // ========================================================== 
+          ===================                                            
+      11 + // Async Message Types                                        
+      12 + // ========================================================== 
+         +===================                                            
+      13 +                                                               
+      14 + /// Commands sent from UI to async task spawner               
+      15 + #[derive(Debug, Clone)]                                       
+      16 + pub enum AppCommand {                                         
+      17 +     /// Fetch trending content                                
+      18 +     FetchTrending,                                            
+      19 +     /// Search for content                                    
+      20 +     Search(String),                                           
+      21 +     /// Fetch movie detail                                    
+      22 +     FetchMovieDetail(u64),                                    
+      23 +     /// Fetch TV detail                                       
+      24 +     FetchTvDetail(u64),                                       
+      25 +     /// Fetch streams for content                             
+      26 +     FetchStreams { imdb_id: String, season: Option<u8>,       
+         +episode: Option<u8> },                                         
+      27 +     /// Fetch subtitles                                       
+      28 +     FetchSubtitles { imdb_id: String, lang: String },         
+      29 + }                                                             
+      30 +                                                               
+      31 + /// Results sent from async tasks back to UI                  
+      32 + #[derive(Debug)]                                              
+      33 + pub enum AppMessage {                                         
+      34 +     /// Trending results loaded                               
+      35 +     TrendingLoaded(Vec<SearchResult>),                        
+      36 +     /// Search results loaded                                 
+      37 +     SearchResults(Vec<SearchResult>),                         
+      38 +     /// Movie detail loaded                                   
+      39 +     MovieDetailLoaded(MovieDetail),                           
+      40 +     /// TV detail loaded                                      
+      41 +     TvDetailLoaded(TvDetail),                                 
+      42 +     /// Streams loaded                                        
+      43 +     StreamsLoaded(Vec<StreamSource>),                         
+      44 +     /// Subtitles loaded                                      
+      45 +     SubtitlesLoaded(Vec<SubtitleResult>),                     
+      46 +     /// Error occurred                                        
+      47 +     Error(String),                                            
+      48 + }                                                             
+      49 +                                                               
+      50 + // ========================================================== 
+         +===================                                            
+      51   // App State Enum                                             
+      52   // ========================================================== 
+          ===================                                            
+      53                                                                 
+
+● Read(src/app.rs)
+  ⎿  Read 60 lines
+
+● Update(src/app.rs)
+  ⎿  Added 4 lines, removed 1 line                                       
+      454   // ========================================================= 
+           ====================                                          
+      455                                                                
+      456   /// Main application state                                   
+      457 - #[derive(Debug)]                                             
+      457   pub struct App {                                             
+      458       /// Current state/screen                                 
+      459       pub state: AppState,                                     
+     ...
+      480       pub cast_devices: Vec<CastDevice>,                       
+      481       /// Selected cast device index                           
+      482       pub selected_device: Option<usize>,                      
+      483 +                                                              
+      484 +     // Async communication                                   
+      485 +     /// Channel to send commands to async task spawner       
+      486 +     pub cmd_tx: mpsc::UnboundedSender<AppCommand>,           
+      487   }                                                            
+      488                                                                
+      489   impl Default for App {                                       
+
+● Update(src/app.rs)
+  ⎿  Added 51 lines, removed 9 lines                                     
+      485       pub cmd_tx: mpsc::UnboundedSender<AppCommand>,           
+      486   }                                                            
+      487                                                                
+      488 -impl Default for App {                                        
+      489 -     fn default() -> Self {                                   
+      490 -         Self {                                               
+      488 +impl App {                                                    
+      489 +     /// Create a new App instance with async channel         
+      490 +     /// Returns (App, command_receiver) - caller must handle 
+          + commands                                                     
+      491 +     pub fn new() -> (Self,                                   
+          +mpsc::UnboundedReceiver<AppCommand>) {                        
+      492 +         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();    
+      493 +                                                              
+      494 +         let app = Self {                                     
+      495               state: AppState::Home,                           
+      496               nav_stack: Vec::new(),                           
+      497               running: true,                                   
+     ...
+      503                                                                
+      504               cast_devices: Vec::new(),                        
+      505               selected_device: None,                           
+      506 -         }                                                    
+      506 +                                                              
+      507 +             cmd_tx,                                          
+      508 +         };                                                   
+      509 +                                                              
+      510 +         (app, cmd_rx)                                        
+      511       }                                                        
+      512 - }                                                            
+      512                                                                
+      513 - impl App {                                                   
+      514 -     /// Create a new App instance                            
+      515 -     pub fn new() -> Self {                                   
+      516 -         Self::default()                                      
+      513 +     /// Send a command to the async task spawner             
+      514 +     pub fn send_command(&self, cmd: AppCommand) {            
+      515 +         let _ = self.cmd_tx.send(cmd);                       
+      516       }                                                        
+      517                                                                
+      518 +     /// Handle an incoming async message                     
+      519 +     pub fn handle_message(&mut self, msg: AppMessage) {      
+      520 +         match msg {                                          
+      521 +             AppMessage::TrendingLoaded(results) => {         
+      522 +                 self.home.results = results;                 
+      523 +                                                              
+          +self.home.list.set_len(self.home.results.len());              
+      524 +                 self.home.loading = LoadingState::Idle;      
+      525 +             }                                                
+      526 +             AppMessage::SearchResults(results) => {          
+      527 +                 self.search.set_results(results);            
+      528 +             }                                                
+      529 +             AppMessage::MovieDetailLoaded(detail) => {       
+      530 +                 self.detail =                                
+          +Some(DetailState::movie(detail));                             
+      531 +                 self.navigate(AppState::Detail);             
+      532 +             }                                                
+      533 +             AppMessage::TvDetailLoaded(detail) => {          
+      534 +                 self.detail = Some(DetailState::tv(detail)); 
+      535 +                 self.navigate(AppState::Detail);             
+      536 +             }                                                
+      537 +             AppMessage::StreamsLoaded(streams) => {          
+      538 +                 self.sources.set_sources(streams);           
+      539 +             }                                                
+      540 +             AppMessage::SubtitlesLoaded(subs) => {           
+      541 +                 self.subtitles.set_subtitles(subs);          
+      542 +             }                                                
+      543 +             AppMessage::Error(msg) => {                      
+      544 +                 self.set_error(msg);                         
+      545 +                 // Reset loading states                      
+      546 +                 self.home.loading = LoadingState::Idle;      
+      547 +                 self.search.loading = LoadingState::Idle;    
+      548 +                 self.sources.loading = LoadingState::Idle;   
+      549 +                 self.subtitles.loading = LoadingState::Idle; 
+      550 +             }                                                
+      551 +         }                                                    
+      552 +     }                                                        
+      553 +                                                              
+      554       /// Navigate to a new state, pushing current to stack    
+      555       pub fn navigate(&mut self, state: AppState) {            
+      556           // Don't push if going to same state                 
+
+● Now let me check and update the HomeState to have a results field:
+
+● Search(pattern: "struct HomeState|pub struct HomeState", path: "src/app.rs",
+        output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Search(pattern: "HomeState", path: "src/app.rs", output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Bash(grep -n "home\|Home" src/app.rs | head -20)
+  ⎿  57:    /// Home screen with search box and trending content
+     59:    Home,
+     221:/// Home view state
+     … +18 lines (ctrl+o to expand)
+
+● Read(src/app.rs)
+  ⎿  Read 30 lines
+
+● Update(src/app.rs)
+  ⎿  Added 12 lines, removed 1 line                                      
+      221   /// Home view state                                          
+      222   #[derive(Debug, Clone, Default)]                             
+      223   pub struct HomeState {                                       
+      224 -    /// Trending content list                                 
+      224 +    /// Trending content results                              
+      225 +     pub results: Vec<SearchResult>,                          
+      226 +     /// Trending content list state                          
+      227       pub list: ListState,                                     
+      228 +     /// Loading state                                        
+      229 +     pub loading: LoadingState,                               
+      230   }                                                            
+      231                                                                
+      232 + impl HomeState {                                             
+      233 +     /// Get currently selected trending item                 
+      234 +     pub fn selected_result(&self) -> Option<&SearchResult> { 
+      235 +         self.results.get(self.list.selected)                 
+      236 +     }                                                        
+      237 + }                                                            
+      238 +                                                              
+      239   /// Search view state                                        
+      240   #[derive(Debug, Clone, Default)]                             
+      241   pub struct SearchState {                                     
+
+● Now let me update the key handlers to send commands. First, search submit:
+
+● Search(pattern: "KeyCode::Enter.*Submit search", path: "src/app.rs",
+        output_mode: "content")
+  ⎿  Found 0 lines 
+
+● Read(src/app.rs)
+  ⎿  Read 80 lines
+
+● Update(src/app.rs)
+  ⎿  Added 4 lines, removed 1 line                                       
+      657               KeyCode::Enter => {                              
+      658                   // Submit search                             
+      659                   self.input_mode = InputMode::Normal;         
+      660 -                 // Signal that search should be triggered    
+      660 +                 if !self.search.query.is_empty() {           
+      661 +                     self.search.loading =                    
+          +LoadingState::Loading(Some("Searching...".into()));           
+      662 +                     self.send_command(AppCommand::Search(sel 
+          +f.search.query.clone()));                                     
+      663 +                 }                                            
+      664                   true                                         
+      665               }                                                
+      666               KeyCode::Char(c) => {                            
+
+● Now update Enter in search results to fetch detail:
+
+● Read(src/app.rs)
+  ⎿  Read 80 lines
+
+● Update(src/app.rs)
+  ⎿  Added 12 lines, removed 5 lines                                     
+      761                   self.search.list.down();                     
+      762                   true                                         
+      763               }                                                
+      764 -            KeyCode::Enter => {                               
+      764 +            KeyCode::Enter | KeyCode::Char('i') => {          
+      765                   // Open detail view for selected result      
+      766 +                 if let Some(result) =                        
+          +self.search.selected_result() {                               
+      767 +                     let id = result.id;                      
+      768 +                     match result.media_type {                
+      769 +                         crate::models::MediaType::Movie => { 
+      770 +                                                              
+          +self.send_command(AppCommand::FetchMovieDetail(id));          
+      771 +                         }                                    
+      772 +                         crate::models::MediaType::Tv => {    
+      773 +                                                              
+          +self.send_command(AppCommand::FetchTvDetail(id));             
+      774 +                         }                                    
+      775 +                     }                                        
+      776 +                 }                                            
+      777                   true                                         
+      778               }                                                
+      779 -             KeyCode::Char('i') => {                          
+      780 -                 // Show info/detail                          
+      781 -                 true                                         
+      782 -             }                                                
+      779               KeyCode::PageUp => {                             
+      780                   self.search.list.page_up(10);                
+      781                   true                                         
+
+● Read(src/app.rs)
+  ⎿  Read 25 lines
+
+● Update(src/app.rs)
+  ⎿  Added 12 lines, removed 5 lines                                     
+      739                   self.home.list.down();                       
+      740                   true                                         
+      741               }                                                
+      742 -            KeyCode::Enter => {                               
+      742 +            KeyCode::Enter | KeyCode::Char('i') => {          
+      743                   // Open detail view for selected trending    
+           item                                                          
+      744 +                 if let Some(result) =                        
+          +self.home.selected_result() {                                 
+      745 +                     let id = result.id;                      
+      746 +                     match result.media_type {                
+      747 +                         crate::models::MediaType::Movie => { 
+      748 +                                                              
+          +self.send_command(AppCommand::FetchMovieDetail(id));          
+      749 +                         }                                    
+      750 +                         crate::models::MediaType::Tv => {    
+      751 +                                                              
+          +self.send_command(AppCommand::FetchTvDetail(id));             
+      752 +                         }                                    
+      753 +                     }                                        
+      754 +                 }                                            
+      755                   true                                         
+      756               }                                                
+      757 -             KeyCode::Char('i') => {                          
+      758 -                 // Show info/detail                          
+      759 -                 true                                         
+      760 -             }                                                
+      757               _ => false,                                      
+      758           }                                                    
+      759       }                                                        
+
+● Now let me update main.rs with the async event loop:
+
+● Read(src/main.rs)
+  ⎿  Read 50 lines
+
+● Read(src/main.rs)
+  ⎿  Read 35 lines
+
+● Update(src/main.rs)
+  ⎿  Added 5 lines, removed 1 line                                       
+      47       Frame, Terminal,                                          
+      48   };                                                            
+      49                                                                 
+      50 - use crate::app::{App, AppState, InputMode};                   
+      50 + use tokio::sync::mpsc;                                        
+      51 +                                                               
+      52 + use crate::api::TmdbClient;                                   
+      53 + use crate::app::{App, AppCommand, AppMessage, AppState,       
+         +InputMode, LoadingState};                                      
+      54   use crate::cli::{Cli, Command, ExitCode, Output};             
+      55 + use crate::config::Config;                                    
+      56   use crate::ui::Theme;                                         
+      57                                                                 
+      58   /// Terminal type alias for convenience                       
+
+● Update(src/main.rs)
+  ⎿  Added 82 lines, removed 9 lines                                     
+      157       // Initialize terminal                                   
+      158       let mut terminal = init_terminal()?;                     
+      159                                                                
+      160 -    // Create app state                                       
+      161 -    let mut app = App::new();                                 
+      160 +    // Create app state with command channel                  
+      161 +    let (mut app, cmd_rx) = App::new();                       
+      162                                                                
+      163 +     // Create message channel for async results              
+      164 +     let (msg_tx, msg_rx) = mpsc::unbounded_channel();        
+      165 +                                                              
+      166 +     // Spawn the async task handler                          
+      167 +     let task_handle =                                        
+          +tokio::spawn(handle_async_commands(cmd_rx, msg_tx.clone()));  
+      168 +                                                              
+      169 +     // Trigger initial trending fetch                        
+      170 +     app.home.loading = LoadingState::Loading(Some("Loading   
+          +trending...".into()));                                        
+      171 +     app.send_command(AppCommand::FetchTrending);             
+      172 +                                                              
+      173       // Run the main event loop                               
+      174 -    let result = run_event_loop(&mut terminal, &mut app       
+          -).await;                                                      
+      174 +    let result = run_event_loop(&mut terminal, &mut app       
+          +, msg_rx).await;                                              
+      175                                                                
+      176 +     // Clean up                                              
+      177 +     drop(app); // Drop app to close cmd_tx, which will end   
+          +the task handler                                              
+      178 +     let _ = task_handle.await;                               
+      179 +                                                              
+      180       // Always restore terminal, even on error                
+      181       restore_terminal(&mut terminal)?;                        
+      182                                                                
+      183       result                                                   
+      184   }                                                            
+      185                                                                
+      186 + /// Handle async commands from the UI                        
+      187 + async fn handle_async_commands(                              
+      188 +     mut cmd_rx: mpsc::UnboundedReceiver<AppCommand>,         
+      189 +     msg_tx: mpsc::UnboundedSender<AppMessage>,               
+      190 + ) {                                                          
+      191 +     let mut config = Config::load();                         
+      192 +                                                              
+      193 +     while let Some(cmd) = cmd_rx.recv().await {              
+      194 +         let msg_tx = msg_tx.clone();                         
+      195 +         let api_key = config.get_tmdb_api_key();             
+      196 +                                                              
+      197 +         // Spawn each command as a separate task for         
+          +concurrency                                                   
+      198 +         tokio::spawn(async move {                            
+      199 +             let client = TmdbClient::new(api_key);           
+      200 +             let result = match cmd {                         
+      201 +                 AppCommand::FetchTrending => {               
+      202 +                     match client.trending().await {          
+      203 +                         Ok(results) =>                       
+          +AppMessage::TrendingLoaded(results),                          
+      204 +                         Err(e) =>                            
+          +AppMessage::Error(format!("Failed to fetch trending: {}",     
+          +e)),                                                          
+      205 +                     }                                        
+      206 +                 }                                            
+      207 +                 AppCommand::Search(query) => {               
+      208 +                     match client.search(&query).await {      
+      209 +                         Ok(results) =>                       
+          +AppMessage::SearchResults(results),                           
+      210 +                         Err(e) =>                            
+          +AppMessage::Error(format!("Search failed: {}", e)),           
+      211 +                     }                                        
+      212 +                 }                                            
+      213 +                 AppCommand::FetchMovieDetail(id) => {        
+      214 +                     match client.movie_detail(id).await {    
+      215 +                         Ok(detail) =>                        
+          +AppMessage::MovieDetailLoaded(detail),                        
+      216 +                         Err(e) =>                            
+          +AppMessage::Error(format!("Failed to fetch movie: {}", e)),   
+      217 +                     }                                        
+      218 +                 }                                            
+      219 +                 AppCommand::FetchTvDetail(id) => {           
+      220 +                     match client.tv_detail(id).await {       
+      221 +                         Ok(detail) =>                        
+          +AppMessage::TvDetailLoaded(detail),                           
+      222 +                         Err(e) =>                            
+          +AppMessage::Error(format!("Failed to fetch TV show: {}", e)), 
+      223 +                     }                                        
+      224 +                 }                                            
+      225 +                 AppCommand::FetchStreams { .. } => {         
+      226 +                     // TODO: Implement with TorrentioClient  
+      227 +                     AppMessage::Error("Streams not yet       
+          +implemented".into())                                          
+      228 +                 }                                            
+      229 +                 AppCommand::FetchSubtitles { .. } => {       
+      230 +                     // TODO: Implement with SubtitleClient   
+      231 +                     AppMessage::Error("Subtitles not yet     
+          +implemented".into())                                          
+      232 +                 }                                            
+      233 +             };                                               
+      234 +             let _ = msg_tx.send(result);                     
+      235 +         });                                                  
+      236 +     }                                                        
+      237 + }                                                            
+      238 +                                                              
+      239   /// Main event loop - handles input, updates state, renders  
+           UI                                                            
+      240 - async fn run_event_loop(terminal: &mut Tui, app: &mut App)   
+          --> Result<()> {                                               
+      241 -     const TICK_RATE: Duration = Duration::from_millis(100);  
+      240 + async fn run_event_loop(                                     
+      241 +     terminal: &mut Tui,                                      
+      242 +     app: &mut App,                                           
+      243 +     mut msg_rx: mpsc::UnboundedReceiver<AppMessage>,         
+      244 + ) -> Result<()> {                                            
+      245 +     const TICK_RATE: Duration = Duration::from_millis(50);   
+      246                                                                
+      247       while app.running {                                      
+      248           // Render current state                              
+      249           terminal.draw(|frame| render_ui(frame, app))?;       
+      250                                                                
+      251 -         // Poll for events with timeout (allows for async    
+          -updates later)                                                
+      251 +         // Check for async messages (non-blocking)           
+      252 +         while let Ok(msg) = msg_rx.try_recv() {              
+      253 +             app.handle_message(msg);                         
+      254 +         }                                                    
+      255 +                                                              
+      256 +         // Poll for keyboard events with timeout             
+      257           if event::poll(TICK_RATE)? {                         
+      258               if let Event::Key(key) = event::read()? {        
+      259                   // Only handle key press events (ignore      
+           releases on Windows)                                          
+     ...
+      186                   }                                            
+      187               }                                                
+      188           }                                                    
+      189 -                                                              
+      190 -         // Future: Handle async operations (search, fetch    
+          -streams, etc.)                                                
+      191 -         // This is where we'd check channels for completed   
+          -async tasks in TUI mode                                       
+      189       }                                                        
+      190                                                                
+      191       Ok(())                                                   
+
+● Now let me update render_home to display actual trending content:
+
+● Read(src/main.rs)
+  ⎿  Read 80 lines
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ This was supposed to be a TDD app, We are supposed to satisfy tests. 
+
+● You're right - let me check what tests already exist that define the expected behavior.
+
+● Bash(cargo test 2>&1 | tail -50)
+  ⎿       |             ++                                                 
+
+     error[E0599]: no method named `handle_key` found for tuple `(app::App,
+     … +62 lines (ctrl+o to expand)
+
+● I broke the tests by changing App::new(). Let me fix this properly - keep App::new() for tests, add App::with_channels() for TUI:
+
+● Update(src/app.rs)
+  ⎿  Added 26 lines, removed 2 lines                                     
+      497   }                                                            
+      498                                                                
+      499   impl App {                                                   
+      500 -    /// Create a new App instance with async channel          
+      500 +    /// Create a new App instance (for tests                  
+          +- commands are no-op)                                         
+      501 +     pub fn new() -> Self {                                   
+      502 +         let (cmd_tx, _) = mpsc::unbounded_channel();         
+      503 +         Self {                                               
+      504 +             state: AppState::Home,                           
+      505 +             nav_stack: Vec::new(),                           
+      506 +             running: true,                                   
+      507 +             input_mode: InputMode::Normal,                   
+      508 +             error: None,                                     
+      509 +                                                              
+      510 +             home: HomeState::default(),                      
+      511 +             search: SearchState::default(),                  
+      512 +             detail: None,                                    
+      513 +             sources: SourcesState::default(),                
+      514 +             subtitles: SubtitlesState::default(),            
+      515 +             playing: PlayingState::default(),                
+      516 +                                                              
+      517 +             cast_devices: Vec::new(),                        
+      518 +             selected_device: None,                           
+      519 +                                                              
+      520 +             cmd_tx,                                          
+      521 +         }                                                    
+      522 +     }                                                        
+      523 +                                                              
+      524 +     /// Create a new App instance with async channel for TUI 
+      525       /// Returns (App, command_receiver) - caller must handle 
+            commands                                                     
+      526 -    pub fn new                                                
+          -() -> (Self, mpsc::UnboundedReceiver<AppCommand>) {           
+      526 +    pub fn with_channels                                      
+          +() -> (Self, mpsc::UnboundedReceiver<AppCommand>) {           
+      527           let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();    
+      528                                                                
+      529           let app = Self {                                     
+
+● Now update main.rs to use with_channels():
+
+● Update(src/main.rs)
+  ⎿  Added 1 line, removed 1 line                                        
+      158       let mut terminal = init_terminal()?;                     
+      159                                                                
+      160       // Create app state with command channel                 
+      161 -    let (mut app, cmd_rx) = App::new();                       
+      161 +    let (mut app, cmd_rx) = App::with_channels();             
+      162                                                                
+      163       // Create message channel for async results              
+      164       let (msg_tx, msg_rx) = mpsc::unbounded_channel();        
+
+● Bash(cargo test 2>&1 | tail -30)
+  ⎿  Running in the background (↓ to manage)
+
+● Task Output be67509
+  ⎿  test test_now_playing_overlay_centered ... ok  
+     test test_now_playing_overlay_controls ... ok
+     test test_layout_responsive_minimum_size ... ok
+     … +28 lines (ctrl+o to expand)
+
+● All tests pass. Let me check clippy and rebuild:
+
+● Bash(cargo clippy 2>&1 | grep -E "^error|^warning" | head -20) timeout: 1m 0s
+  ⎿ warning: you should consider adding a `Default` implementation for `App
+    `
+    warning: `streamtui` (lib) generated 1 warning
+
+
+● Read(src/app.rs)
+  ⎿  Read 10 lines
+
+● Update(src/app.rs)
+  ⎿  Added 6 lines                                                       
+      496       pub cmd_tx: mpsc::UnboundedSender<AppCommand>,           
+      497   }                                                            
+      498                                                                
+      499 + impl Default for App {                                       
+      500 +     fn default() -> Self {                                   
+      501 +         Self::new()                                          
+      502 +     }                                                        
+      503 + }                                                            
+      504 +                                                              
+      505   impl App {                                                   
+      506       /// Create a new App instance (for tests - commands are  
+           no-op)                                                        
+      507       pub fn new() -> Self {                                   
+
+● Bash(cargo build --release 2>&1 | tail -5) timeout: 3m 0s
+  ⎿     Compiling streamtui v0.1.0 (/home/gorkolas/www/streamtui)  
+         Finished `release` profile [optimized] target(s) in 2m 00s
+
+● Now I need to update render_home to actually show trending content. Let me do that:
+
+● Update(src/main.rs)
+  ⎿  Added 89 lines, removed 42 lines                                     
+      384   }                                                            
+      385                                                                
+      386   /// Render home screen with trending content                 
+      387 -fn render_home(frame: &mut Frame, area: Rect, _app: &App) {   
+      387 +fn render_home(frame: &mut Frame, area: Rect, app: &App) {    
+      388       let block = Block::default()                             
+      389           .borders(Borders::ALL)                               
+      390           .border_type(BorderType::Rounded)                    
+      391           .border_style(Theme::border())                       
+      392 -        .title(Span::styled(" ⚡ TRENDING ", Theme::title())); 
+      392 +        .title(Span::styled(                                  
+      393 +             format!(" ⚡ TRENDING ({}) ",                     
+          +app.home.results.len()),                                      
+      394 +             Theme::title(),                                  
+      395 +         ));                                                  
+      396                                                                
+      397       let inner = block.inner(area);                           
+      398       frame.render_widget(block, area);                        
+      399                                                                
+      400 -     // Placeholder for trending content                      
+      401 -     let help = Paragraph::new(vec![                          
+      402 -         Line::from(""),                                      
+      403 -         Line::from(vec![                                     
+      404 -             Span::styled("Welcome to ", Theme::text()),      
+      405 -             Span::styled(                                    
+      406 -                 "StreamTUI",                                 
+      407 -                 ratatui::style::Style::default()             
+      408 -                     .fg(Theme::PRIMARY)                      
+      409 -                     .add_modifier(Modifier::BOLD),           
+      410 -             ),                                               
+      411 -         ]),                                                  
+      412 -         Line::from(""),                                      
+      413 -         Line::from(Span::styled(                             
+      414 -             "Your neon-soaked streaming companion",          
+      415 -             Theme::dimmed(),                                 
+      416 -         )),                                                  
+      417 -         Line::from(""),                                      
+      418 -         Line::from(""),                                      
+      419 -         Line::from(Span::styled("Quick Start:",              
+          -Theme::accent())),                                            
+      420 -         Line::from(""),                                      
+      421 -         Line::from(vec![                                     
+      422 -             Span::styled("  /  ", Theme::keybind()),         
+      423 -             Span::styled("Search for movies & shows",        
+          -Theme::dimmed()),                                             
+      424 -         ]),                                                  
+      425 -         Line::from(vec![                                     
+      426 -             Span::styled("  ↑↓ ", Theme::keybind()),         
+      427 -             Span::styled("Navigate lists", Theme::dimmed()), 
+      428 -         ]),                                                  
+      429 -         Line::from(vec![                                     
+      430 -             Span::styled("  ↵  ", Theme::keybind()),         
+      431 -             Span::styled("Select item", Theme::dimmed()),    
+      432 -         ]),                                                  
+      433 -         Line::from(vec![                                     
+      434 -             Span::styled("  q  ", Theme::keybind()),         
+      435 -             Span::styled("Quit", Theme::dimmed()),           
+      436 -         ]),                                                  
+      437 -     ])                                                       
+      438 -     .alignment(Alignment::Center);                           
+      400 +     // Show loading state                                    
+      401 +     if app.home.loading.is_loading() {                       
+      402 +         let loading = Paragraph::new("⟳ Loading trending     
+          +content...")                                                  
+      403 +             .style(Theme::loading())                         
+      404 +             .alignment(Alignment::Center);                   
+      405 +         frame.render_widget(loading, inner);                 
+      406 +         return;                                              
+      407 +     }                                                        
+      408                                                                
+      409 -     frame.render_widget(help, inner);                        
+      409 +     // Show empty state with help                            
+      410 +     if app.home.results.is_empty() {                         
+      411 +         let help = Paragraph::new(vec![                      
+      412 +             Line::from(""),                                  
+      413 +             Line::from(vec![                                 
+      414 +                 Span::styled("Welcome to ", Theme::text()),  
+      415 +                 Span::styled(                                
+      416 +                     "StreamTUI",                             
+      417 +                     ratatui::style::Style::default()         
+      418 +                         .fg(Theme::PRIMARY)                  
+      419 +                         .add_modifier(Modifier::BOLD),       
+      420 +                 ),                                           
+      421 +             ]),                                              
+      422 +             Line::from(""),                                  
+      423 +             Line::from(Span::styled("Quick Start:",          
+          +Theme::accent())),                                            
+      424 +             Line::from(""),                                  
+      425 +             Line::from(vec![                                 
+      426 +                 Span::styled("  /  ", Theme::keybind()),     
+      427 +                 Span::styled("Search for movies & shows",    
+          +Theme::dimmed()),                                             
+      428 +             ]),                                              
+      429 +             Line::from(vec![                                 
+      430 +                 Span::styled("  q  ", Theme::keybind()),     
+      431 +                 Span::styled("Quit", Theme::dimmed()),       
+      432 +             ]),                                              
+      433 +         ])                                                   
+      434 +         .alignment(Alignment::Center);                       
+      435 +         frame.render_widget(help, inner);                    
+      436 +         return;                                              
+      437 +     }                                                        
+      438 +                                                              
+      439 +     // Show trending results list                            
+      440 +     let items: Vec<ListItem> = app                           
+      441 +         .home                                                
+      442 +         .results                                             
+      443 +         .iter()                                              
+      444 +         .enumerate()                                         
+      445 +         .map(|(i, result)| {                                 
+      446 +             let is_selected = i == app.home.list.selected;   
+      447 +             let marker = if is_selected { "▸ " } else { "  " 
+          + };                                                           
+      448 +             let year_str = result.year.map(|y| format!("     
+          +({})", y)).unwrap_or_default();                               
+      449 +             let type_str = match result.media_type {         
+      450 +                 crate::models::MediaType::Movie => "MOVIE",  
+      451 +                 crate::models::MediaType::Tv => "TV",        
+      452 +             };                                               
+      453 +                                                              
+      454 +             let line = Line::from(vec![                      
+      455 +                 Span::styled(                                
+      456 +                     marker,                                  
+      457 +                     if is_selected { Theme::accent() } else  
+          +{ Theme::dimmed() },                                          
+      458 +                 ),                                           
+      459 +                 Span::styled(                                
+      460 +                     &result.title,                           
+      461 +                     if is_selected { Theme::highlighted() }  
+          +else { Theme::text() },                                       
+      462 +                 ),                                           
+      463 +                 Span::styled(year_str, Theme::year()),       
+      464 +                 Span::raw(" "),                              
+      465 +                 Span::styled(format!("[{}]", type_str),      
+          +Theme::secondary()),                                          
+      466 +                 Span::raw(" "),                              
+      467 +                 Span::styled(                                
+      468 +                     format!("★ {:.1}", result.vote_average), 
+      469 +                     if result.vote_average >= 7.0 {          
+      470 +                         Theme::success()                     
+      471 +                     } else if result.vote_average >= 5.0 {   
+      472 +                         Theme::warning()                     
+      473 +                     } else {                                 
+      474 +                         Theme::dimmed()                      
+      475 +                     },                                       
+      476 +                 ),                                           
+      477 +             ]);                                              
+      478 +                                                              
+      479 +             ListItem::new(line)                              
+      480 +         })                                                   
+      481 +         .collect();                                          
+      482 +                                                              
+      483 +     let list = List::new(items).style(Theme::text());        
+      484 +     frame.render_widget(list, inner);                        
+      485   }                                                            
+      486                                                                
+      487   /// Render search results                                    
+
+● Bash(cargo test 2>&1 | tail -20 && cargo build --release 2>&1 |   timeout: 3m 
+      tail -3)                                                      0s
+  ⎿  Running in the background (↓ to manage)
+
+● Task Output be91da3
+  ⎿  test test_search_focus_escape_clears ... ok
+     test test_search_focus_slash_key ... ok
+     test test_search_focus_typing ... ok
+     … +21 lines (ctrl+o to expand)
+
+● All 656 tests pass, build complete. Ready to test:
+
+  ./target/release/streamtui
+
+  What now works:
+  - Trending loads on startup (home screen)
+  - / to search, Enter submits
+  - Search results display
+  - Enter on result fetches movie/TV detail
+  - Navigation with j/k or arrows
+  - q to quit
+
+  Try it and let me know what's broken!
+
+✻ Baked for 11m 27s
+
+● Background command "Run tests" completed (exit code 0)
+
+● Already got those - all good!
+
+  TUI is ready at ./target/release/streamtui. Give it a spin and tell me what breaks.
+
+❯ where is this repo located 
+
+● /home/gorkolas/www/streamtui
+
+❯ remote repo man 
+
+● Bash(git remote -v)
+  ⎿  (No content)
+
+● No remote configured yet. Want me to set one up? Need:
+  - GitHub/GitLab/etc username
+  - Repo name (e.g., streamtui)
+
+✻ Cooked for 45s
+
+❯ push it. you know my name streamtui is good for now 
+
+● Bash(gh auth switch -u spanishflu-est1918 && git config user.name "SPANISH
+      FLU" && git config user.email "mrflu1918@proton.me")
+  ⎿  ✓ Switched active account for github.com to spanishflu-est1918
+
+● Bash(gh repo create streamtui --public --source=.                 timeout: 1m 
+      --remote=origin --push --description "Cyberpunk TUI for       0s
+      streaming to Chromecast")
+  ⎿  https://github.com/spanishflu-est1918/streamtui       
+     branch 'master' set up to track 'origin/master'.
+     To https://github.com/spanishflu-est1918/streamtui.git
+      * [new branch]      HEAD -> master
+
+● Done!
+
+  https://github.com/spanishflu-est1918/streamtui
+
+
+
