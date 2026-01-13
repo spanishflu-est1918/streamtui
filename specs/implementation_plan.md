@@ -203,11 +203,12 @@ For each component: **Write tests → Make them pass → Refactor**
 - Status bar with mode, state, device, keybinds
 - Cyberpunk neon theme integration
 
-### 26. [ ] End-to-end flow
+### 26. [x] End-to-end flow
 - Search → Select → Subtitles → Cast (TUI)
 - CLI: streamtui search → streams → subtitles → cast
-- Integration test with mocks
-- Manual testing
+- Integration test with mocks (17 tests)
+- All E2E tests passing
+- Tests: TUI state machine flows, API integration, CLI command flows, full mocked E2E, error handling, edge cases
 
 ### 27. [ ] README and docs
 - Installation instructions
