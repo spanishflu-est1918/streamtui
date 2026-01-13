@@ -98,10 +98,11 @@ For each component: **Write tests → Make them pass → Refactor**
 - 30 tests: all pass
 - Tests: theme colors (valid RGB, WCAG contrast ratios), responsive layout (80x24, 200x50), navigation (up/down, enter, escape), search focus (/, typing, enter, escape), content card render, now playing overlay
 
-### 15. [ ] Theme and styles (src/ui/theme.rs)
-- Cyberpunk color palette
-- Component styles
-- Visual test (screenshot comparison optional)
+### 15. [x] Theme and styles (src/ui/theme.rs)
+- Cyberpunk color palette (all 10 core colors + 4 derived colors)
+- Component styles (30+ style helpers: list items, inputs, quality indicators, seeds, status bar, etc.)
+- WCAG contrast ratio validation (12 unit tests ensure accessibility)
+- Visual test (optional) - contrast ratio tests cover accessibility requirements
 
 ### 16. [x] App state (src/app.rs)
 - Define AppState enum (Home, Search, Detail, Sources, Subtitles, Playing)
