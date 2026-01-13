@@ -105,46 +105,18 @@ fn mock_torrentio_streams_response() -> &'static str {
     }"#
 }
 
-fn mock_opensubtitles_search_response() -> &'static str {
+fn mock_stremio_subtitles_response() -> &'static str {
     r#"{
-        "total_pages": 1,
-        "total_count": 2,
-        "per_page": 60,
-        "page": 1,
-        "data": [
+        "subtitles": [
             {
                 "id": "12345",
-                "type": "subtitle",
-                "attributes": {
-                    "subtitle_id": "12345",
-                    "language": "en",
-                    "download_count": 50000,
-                    "hearing_impaired": false,
-                    "ai_translated": false,
-                    "machine_translated": false,
-                    "from_trusted": true,
-                    "release": "The.Batman.2022.2160p.WEB-DL",
-                    "fps": 23.976,
-                    "format": "srt",
-                    "files": [{"file_id": 54321, "file_name": "The.Batman.2022.en.srt"}]
-                }
+                "url": "https://subs.strem.io/download/12345",
+                "lang": "eng"
             },
             {
                 "id": "12346",
-                "type": "subtitle",
-                "attributes": {
-                    "subtitle_id": "12346",
-                    "language": "en",
-                    "download_count": 25000,
-                    "hearing_impaired": true,
-                    "ai_translated": false,
-                    "machine_translated": false,
-                    "from_trusted": true,
-                    "release": "The.Batman.2022.1080p.BluRay",
-                    "fps": 23.976,
-                    "format": "srt",
-                    "files": [{"file_id": 54322, "file_name": "The.Batman.2022.en.HI.srt"}]
-                }
+                "url": "https://subs.strem.io/download/12346",
+                "lang": "eng"
             }
         ]
     }"#
@@ -353,6 +325,16 @@ async fn test_tui_detail_to_sources_flow() {
     // Go back to sources
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
     assert_eq!(app.state, AppState::Sources);
+
+    // Set up a Chromecast device (required for playback)
+    app.cast_devices = vec![CastDevice {
+        id: "192.168.1.50".to_string(),
+        name: "Living Room TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    }];
+    app.selected_device = Some(0);
 
     // Press Enter to start playing
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
@@ -629,10 +611,10 @@ async fn test_api_tv_show_episode_flow() {
 
 #[tokio::test]
 async fn test_api_search_with_subtitles() {
-    // Test search flow with subtitle lookup
+    // Test search flow with subtitle lookup (Stremio endpoint)
 
     let mut tmdb_server = Server::new_async().await;
-    let mut opensub_server = Server::new_async().await;
+    let mut stremio_server = Server::new_async().await;
 
     // Mock TMDB search
     let _search_mock = tmdb_server
@@ -647,16 +629,12 @@ async fn test_api_search_with_subtitles() {
         .create_async()
         .await;
 
-    // Mock OpenSubtitles search (client strips "tt" prefix, path is /subtitles not /api/v1/subtitles)
-    let subs_mock = opensub_server
-        .mock("GET", "/subtitles")
-        .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
-            "imdb_id".into(),
-            "1877830".into(),
-        )]))
+    // Mock Stremio subtitles endpoint
+    let subs_mock = stremio_server
+        .mock("GET", "/subtitles/movie/tt1877830.json")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(mock_opensubtitles_search_response())
+        .with_body(mock_stremio_subtitles_response())
         .create_async()
         .await;
 
@@ -665,22 +643,17 @@ async fn test_api_search_with_subtitles() {
     let results = tmdb.search("batman").await.unwrap();
     assert!(!results.is_empty());
 
-    // Get subtitles
-    let sub_client = SubtitleClient::with_base_url(opensub_server.url());
-    let subtitles = sub_client.search("tt1877830", Some("en")).await.unwrap();
+    // Get subtitles (Stremio uses 3-letter codes like "eng")
+    let sub_client = SubtitleClient::with_base_url(stremio_server.url());
+    let subtitles = sub_client.search("tt1877830", Some("eng")).await.unwrap();
 
     assert_eq!(subtitles.len(), 2);
 
     // Verify subtitle attributes
     let best_sub = &subtitles[0];
-    assert_eq!(best_sub.language, "en");
-    assert!(best_sub.from_trusted);
-    assert!(!best_sub.hearing_impaired);
+    assert_eq!(best_sub.language, "eng");
+    assert!(best_sub.from_trusted); // Stremio subs default to trusted
     assert_eq!(best_sub.format, SubFormat::Srt);
-
-    // Verify HI subtitle
-    let hi_sub = subtitles.iter().find(|s| s.hearing_impaired).unwrap();
-    assert!(hi_sub.from_trusted);
 
     subs_mock.assert_async().await;
 }
@@ -808,7 +781,7 @@ async fn test_full_e2e_flow_mocked() {
 
     let mut tmdb_server = Server::new_async().await;
     let mut torrentio_server = Server::new_async().await;
-    let mut opensub_server = Server::new_async().await;
+    let mut stremio_sub_server = Server::new_async().await;
 
     // Setup all mocks (UrlEncoded matcher expects decoded value)
     let _search = tmdb_server
@@ -837,21 +810,17 @@ async fn test_full_e2e_flow_mocked() {
         .create_async()
         .await;
 
-    let _subs = opensub_server
-        .mock("GET", "/subtitles")
-        .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded(
-            "imdb_id".into(),
-            "1877830".into(),
-        )]))
+    let _subs = stremio_sub_server
+        .mock("GET", "/subtitles/movie/tt1877830.json")
         .with_status(200)
-        .with_body(mock_opensubtitles_search_response())
+        .with_body(mock_stremio_subtitles_response())
         .create_async()
         .await;
 
     // Initialize clients
     let tmdb = TmdbClient::with_base_url("test_key", tmdb_server.url());
     let torrentio = TorrentioClient::with_base_url(torrentio_server.url());
-    let sub_client = SubtitleClient::with_base_url(opensub_server.url());
+    let sub_client = SubtitleClient::with_base_url(stremio_sub_server.url());
 
     // === STEP 1: Search ===
     let results = tmdb.search("the batman").await.unwrap();
@@ -891,7 +860,7 @@ async fn test_full_e2e_flow_mocked() {
 
     // === STEP 4: Get Subtitles ===
     let subtitles = sub_client
-        .search(&detail.imdb_id, Some("en"))
+        .search(&detail.imdb_id, Some("eng"))
         .await
         .unwrap();
     assert!(!subtitles.is_empty());
@@ -982,20 +951,19 @@ async fn test_no_streams_handling() {
 
 #[tokio::test]
 async fn test_no_subtitles_handling() {
-    // Test handling when no subtitles are available
+    // Test handling when no subtitles are available (Stremio endpoint)
 
     let mut server = Server::new_async().await;
 
     let _mock = server
-        .mock("GET", "/subtitles")
-        .match_query(Matcher::Any)
+        .mock("GET", "/subtitles/movie/tt9999999.json")
         .with_status(200)
-        .with_body(r#"{"data": [], "total_count": 0}"#)
+        .with_body(r#"{"subtitles": []}"#)
         .create_async()
         .await;
 
     let client = SubtitleClient::with_base_url(server.url());
-    let subs = client.search("tt9999999", Some("en")).await.unwrap();
+    let subs = client.search("tt9999999", Some("eng")).await.unwrap();
 
     assert!(subs.is_empty());
 }
@@ -1088,4 +1056,419 @@ fn test_volume_bounds() {
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()));
     }
     assert!(app.playing.playback.as_ref().unwrap().volume >= 0.0);
+}
+
+// =============================================================================
+// Playback Flow Tests
+// =============================================================================
+
+#[test]
+fn test_devices_loaded_message_updates_state() {
+    use streamtui::app::AppMessage;
+
+    let mut app = App::new();
+    assert!(app.cast_devices.is_empty());
+    assert!(app.selected_device.is_none());
+
+    // Simulate receiving devices from discovery
+    let devices = vec![
+        CastDevice {
+            id: "192.168.1.50".to_string(),
+            name: "Living Room TV".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            port: 8009,
+            model: Some("Chromecast Ultra".to_string()),
+        },
+        CastDevice {
+            id: "192.168.1.51".to_string(),
+            name: "Bedroom".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 51)),
+            port: 8009,
+            model: None,
+        },
+    ];
+
+    app.handle_message(AppMessage::DevicesLoaded(devices.clone()));
+
+    assert_eq!(app.cast_devices.len(), 2);
+    assert_eq!(app.cast_devices[0].name, "Living Room TV");
+    assert_eq!(app.selected_device, Some(0)); // Auto-selects first device
+}
+
+#[test]
+fn test_devices_loaded_empty_does_not_select() {
+    use streamtui::app::AppMessage;
+
+    let mut app = App::new();
+    app.handle_message(AppMessage::DevicesLoaded(vec![]));
+
+    assert!(app.cast_devices.is_empty());
+    assert!(app.selected_device.is_none());
+}
+
+#[test]
+fn test_playback_started_updates_torrent_session() {
+    use streamtui::app::AppMessage;
+    use streamtui::models::{TorrentSession, TorrentState};
+
+    let mut app = App::new();
+    app.state = AppState::Playing;
+
+    // Set up a torrent session in Starting state
+    let session = TorrentSession::new("magnet:?xt=urn:btih:abc".to_string(), Some(0));
+    assert_eq!(session.state, TorrentState::Starting);
+    assert!(session.stream_url.is_none());
+
+    app.playing.torrent = Some(session);
+
+    // Simulate playback started
+    app.handle_message(AppMessage::PlaybackStarted {
+        stream_url: "http://localhost:8888/0".to_string(),
+    });
+
+    let session = app.playing.torrent.as_ref().unwrap();
+    assert_eq!(session.state, TorrentState::Streaming);
+    assert_eq!(
+        session.stream_url,
+        Some("http://localhost:8888/0".to_string())
+    );
+}
+
+#[test]
+fn test_playback_stopped_clears_state_and_navigates_back() {
+    use streamtui::app::AppMessage;
+    use streamtui::models::TorrentSession;
+
+    let mut app = App::new();
+
+    // Set up: navigate to Playing state
+    app.navigate(AppState::Sources);
+    app.navigate(AppState::Playing);
+    assert_eq!(app.state, AppState::Playing);
+
+    // Set up playing state with data
+    app.playing.title = "The Batman".to_string();
+    app.playing.torrent = Some(TorrentSession::new("magnet:?xt=...".to_string(), None));
+    app.playing.device = Some(CastDevice {
+        id: "192.168.1.50".to_string(),
+        name: "TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    });
+
+    // Simulate playback stopped
+    app.handle_message(AppMessage::PlaybackStopped);
+
+    // Should clear playing state
+    assert!(app.playing.torrent.is_none());
+    assert!(app.playing.device.is_none());
+    assert!(app.playing.title.is_empty());
+
+    // Should navigate back
+    assert_eq!(app.state, AppState::Sources);
+}
+
+#[tokio::test]
+async fn test_enter_in_sources_sends_start_playback_command() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+
+    // Set up: we're in Sources with a selected source and device
+    app.state = AppState::Sources;
+    app.sources.title = "The Batman".to_string();
+    app.sources.set_sources(vec![StreamSource {
+        name: "Torrentio\n1080p".to_string(),
+        title: "The.Batman.2022.1080p".to_string(),
+        info_hash: "abc123def456789012345678901234567890abcd".to_string(),
+        file_idx: Some(0),
+        seeds: 1500,
+        quality: Quality::FHD1080p,
+        size_bytes: Some(8_000_000_000),
+    }]);
+
+    // Set up a device
+    app.cast_devices = vec![CastDevice {
+        id: "192.168.1.50".to_string(),
+        name: "Living Room TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    }];
+    app.selected_device = Some(0);
+
+    // Press Enter to start playback
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+
+    // Should navigate to Playing
+    assert_eq!(app.state, AppState::Playing);
+
+    // Should have sent StartPlayback command
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    match cmd {
+        AppCommand::StartPlayback { magnet, title, device, .. } => {
+            assert!(magnet.contains("abc123def456789012345678901234567890abcd"));
+            assert_eq!(title, "The Batman");
+            assert_eq!(device, "Living Room TV");
+        }
+        other => panic!("Expected StartPlayback, got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_enter_in_sources_without_device_shows_error() {
+    let (mut app, _cmd_rx) = App::with_channels();
+
+    // Set up: Sources with source but NO device
+    app.state = AppState::Sources;
+    app.sources.set_sources(vec![StreamSource {
+        name: "Torrentio\n1080p".to_string(),
+        title: "Test".to_string(),
+        info_hash: "abc123".to_string(),
+        file_idx: Some(0),
+        seeds: 100,
+        quality: Quality::FHD1080p,
+        size_bytes: None,
+    }]);
+    // No device set
+    assert!(app.selected_device.is_none());
+
+    // Press Enter
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+
+    // Should show error, NOT navigate to Playing
+    assert!(app.error.is_some());
+    assert!(app.error.as_ref().unwrap().contains("device"));
+    assert_eq!(app.state, AppState::Sources); // Still in Sources
+}
+
+#[tokio::test]
+async fn test_d_key_triggers_device_discovery() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Sources;
+
+    // Press 'd' to discover devices
+    app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::empty()));
+
+    // Should have sent DiscoverDevices command
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::DiscoverDevices));
+}
+
+// =============================================================================
+// Device Selector Tests
+// =============================================================================
+
+#[test]
+fn test_tab_cycles_through_devices() {
+    let mut app = App::new();
+    app.state = AppState::Sources;
+
+    // Set up multiple devices
+    app.cast_devices = vec![
+        CastDevice {
+            id: "1".to_string(),
+            name: "Living Room".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            port: 8009,
+            model: None,
+        },
+        CastDevice {
+            id: "2".to_string(),
+            name: "Bedroom".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 51)),
+            port: 8009,
+            model: None,
+        },
+        CastDevice {
+            id: "3".to_string(),
+            name: "Kitchen".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 52)),
+            port: 8009,
+            model: None,
+        },
+    ];
+    app.selected_device = Some(0);
+
+    // Tab should cycle to next device
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()));
+    assert_eq!(app.selected_device, Some(1));
+
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()));
+    assert_eq!(app.selected_device, Some(2));
+
+    // Should wrap around
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()));
+    assert_eq!(app.selected_device, Some(0));
+}
+
+#[test]
+fn test_shift_tab_cycles_backwards() {
+    let mut app = App::new();
+    app.state = AppState::Sources;
+
+    app.cast_devices = vec![
+        CastDevice {
+            id: "1".to_string(),
+            name: "Living Room".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            port: 8009,
+            model: None,
+        },
+        CastDevice {
+            id: "2".to_string(),
+            name: "Bedroom".to_string(),
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 51)),
+            port: 8009,
+            model: None,
+        },
+    ];
+    app.selected_device = Some(0);
+
+    // Shift+Tab should go backwards (wrap to end)
+    app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    assert_eq!(app.selected_device, Some(1));
+
+    app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    assert_eq!(app.selected_device, Some(0));
+}
+
+// =============================================================================
+// Playback Control Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_space_sends_pause_command() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Playing;
+    app.playing.device = Some(CastDevice {
+        id: "1".to_string(),
+        name: "TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    });
+
+    // Press space to toggle pause
+    app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()));
+
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::PlaybackControl { action, .. } if action == "play_toggle"));
+}
+
+#[tokio::test]
+async fn test_s_sends_stop_command() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Playing;
+    app.playing.device = Some(CastDevice {
+        id: "1".to_string(),
+        name: "TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    });
+
+    // Press 's' to stop
+    app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty()));
+
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::StopPlayback));
+}
+
+#[tokio::test]
+async fn test_arrow_keys_send_volume_commands() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Playing;
+    app.playing.device = Some(CastDevice {
+        id: "1".to_string(),
+        name: "TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    });
+
+    // Press Up for volume up
+    app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::empty()));
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::PlaybackControl { action, .. } if action == "volumeup"));
+
+    // Press Down for volume down
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::empty()));
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::PlaybackControl { action, .. } if action == "volumedown"));
+}
+
+#[tokio::test]
+async fn test_left_right_send_seek_commands() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Playing;
+    app.playing.device = Some(CastDevice {
+        id: "1".to_string(),
+        name: "TV".to_string(),
+        address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+        port: 8009,
+        model: None,
+    });
+
+    // Press Left for rewind
+    app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::empty()));
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::PlaybackControl { action, .. } if action == "rewind"));
+
+    // Press Right for ffwd
+    app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()));
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    assert!(matches!(cmd, AppCommand::PlaybackControl { action, .. } if action == "ffwd"));
+}
+
+// =============================================================================
+// Auto-fetch Subtitles Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_entering_subtitles_triggers_fetch() {
+    use streamtui::app::AppCommand;
+
+    let (mut app, mut cmd_rx) = App::with_channels();
+    app.state = AppState::Sources;
+
+    // Set up detail with IMDB ID
+    app.detail = Some(DetailState::movie(MovieDetail {
+        id: 414906,
+        imdb_id: "tt1877830".to_string(),
+        title: "The Batman".to_string(),
+        year: 2022,
+        runtime: 176,
+        genres: vec![],
+        overview: "".to_string(),
+        vote_average: 7.8,
+        poster_path: None,
+        backdrop_path: None,
+    }));
+
+    // Press 'u' to go to subtitles
+    app.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::empty()));
+
+    // Should navigate to Subtitles
+    assert_eq!(app.state, AppState::Subtitles);
+
+    // Should have sent FetchSubtitles command
+    let cmd = cmd_rx.try_recv().expect("Should have sent a command");
+    match cmd {
+        AppCommand::FetchSubtitles { imdb_id, .. } => {
+            assert_eq!(imdb_id, "tt1877830");
+        }
+        other => panic!("Expected FetchSubtitles, got {:?}", other),
+    }
 }

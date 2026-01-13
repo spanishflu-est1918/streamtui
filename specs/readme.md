@@ -15,7 +15,7 @@ Neon-soaked terminal UI. Search content, pick quality, cast to TV. Simple. Fast.
 | addons | Stremio addon client (Torrentio, Cinemeta) | specs/addons.md |
 | torrent | Magnet parsing, webtorrent streaming | specs/torrent.md |
 | cast | Chromecast discovery and casting | specs/cast.md |
-| subtitles | OpenSubtitles integration | specs/subtitles.md |
+| subtitles | Stremio subtitle integration | specs/subtitles.md |
 
 ## Search Keywords
 - tui, terminal, ratatui, crossterm, ui, interface

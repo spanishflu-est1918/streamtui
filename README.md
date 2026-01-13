@@ -315,7 +315,7 @@ streamtui cast-magnet "magnet:?xt=..." -d TV --subtitle-file /path/to/subs.srt
 
 **Options:**
 - `--device, -d <name>` — Target device
-- `--subtitle <lang>` — Search OpenSubtitles for this language
+- `--subtitle <lang>` — Search for subtitles in this language (via Stremio)
 - `--subtitle-file <path>` — Path to local subtitle file (.srt, .vtt)
 - `--file-idx, -i <N>` — File index within torrent (default: largest video)
 - `--start <secs>` — Start position
@@ -607,7 +607,7 @@ streamtui/
 │   ├── stream/          # Streaming components
 │   │   ├── torrent.rs   # webtorrent-cli wrapper
 │   │   ├── cast.rs      # catt wrapper
-│   │   └── subtitles.rs # OpenSubtitles client
+│   │   └── subtitles.rs # Stremio subtitle client
 │   └── ui/              # TUI components
 │       ├── theme.rs     # Cyberpunk color palette
 │       ├── search.rs    # Search view

@@ -43,7 +43,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 
@@ -51,9 +51,10 @@ use tokio::sync::mpsc;
 
 use crate::api::{TmdbClient, TorrentioClient};
 use crate::stream::SubtitleClient;
-use crate::app::{App, AppCommand, AppMessage, AppState, DetailState, InputMode, LoadingState};
+use crate::app::{App, AppCommand, AppMessage, AppState, DetailState, InputMode, ListState, LoadingState, TvFocus};
 use crate::cli::{Cli, Command, ExitCode, Output};
 use crate::config::Config;
+use crate::models::{CastDevice, CastState, Episode, TorrentState};
 use crate::ui::Theme;
 
 /// Terminal type alias for convenience
@@ -161,6 +162,14 @@ async fn run_tui() -> Result<()> {
     // Create app state with command channel
     let (mut app, cmd_rx) = App::with_channels();
 
+    // Load config and apply saved settings
+    let config = Config::load();
+    if let Some(ref lang) = config.default_subtitle_lang {
+        app.default_subtitle_lang = lang.clone();
+    }
+    // Store default device name for later matching when devices are discovered
+    app.default_device_name = config.default_device.clone();
+
     // Create message channel for async results
     let (msg_tx, msg_rx) = mpsc::unbounded_channel();
 
@@ -171,12 +180,18 @@ async fn run_tui() -> Result<()> {
     app.home.loading = LoadingState::Loading(Some("Loading trending...".into()));
     app.send_command(AppCommand::FetchTrending);
 
+    // Discover devices at startup (for auto-selecting saved default)
+    app.send_command(AppCommand::DiscoverDevices);
+
     // Run the main event loop
     let result = run_event_loop(&mut terminal, &mut app, msg_rx).await;
 
     // Clean up
     drop(app); // Drop app to close cmd_tx, which will end the task handler
     let _ = task_handle.await;
+
+    // Kill any orphaned webtorrent processes
+    cleanup_torrent_processes();
 
     // Always restore terminal, even on error
     restore_terminal(&mut terminal)?;
@@ -223,6 +238,12 @@ async fn handle_async_commands(
                         Err(e) => AppMessage::Error(format!("Failed to fetch TV show: {}", e)),
                     }
                 }
+                AppCommand::FetchEpisodes { tv_id, season } => {
+                    match client.tv_season(tv_id, season).await {
+                        Ok(episodes) => AppMessage::EpisodesLoaded { season, episodes },
+                        Err(e) => AppMessage::Error(format!("Failed to fetch episodes: {}", e)),
+                    }
+                }
                 AppCommand::FetchStreams { imdb_id, season, episode } => {
                     let torrentio = TorrentioClient::new();
                     let result = if let (Some(s), Some(e)) = (season, episode) {
@@ -238,17 +259,53 @@ async fn handle_async_commands(
                     }
                 }
                 AppCommand::FetchSubtitles { imdb_id, lang } => {
-                    let sub_config = Config::load();
-                    let subtitle_client = if let Some(key) = sub_config.get_opensubtitles_api_key() {
-                        SubtitleClient::with_api_key(key)
-                    } else {
-                        SubtitleClient::new()
-                    };
+                    // Stremio client is free - no API key needed
+                    let subtitle_client = SubtitleClient::new();
                     let lang_opt = if lang.is_empty() { None } else { Some(lang.as_str()) };
                     match subtitle_client.search(&imdb_id, lang_opt).await {
                         Ok(subs) => AppMessage::SubtitlesLoaded(subs),
                         Err(e) => AppMessage::Error(format!("Failed to fetch subtitles: {}", e)),
                     }
+                }
+                AppCommand::DiscoverDevices => {
+                    // Discover Chromecast devices using catt scan
+                    match discover_cast_devices().await {
+                        Ok(devices) => AppMessage::DevicesLoaded(devices),
+                        Err(e) => AppMessage::Error(format!("Device discovery failed: {}", e)),
+                    }
+                }
+                AppCommand::StartPlayback { magnet, title, device, subtitle_url } => {
+                    // Start webtorrent + cast flow
+                    match start_playback(&magnet, &title, &device, subtitle_url.as_deref()).await {
+                        Ok(stream_url) => AppMessage::PlaybackStarted { stream_url },
+                        Err(e) => AppMessage::Error(format!("Playback failed: {}", e)),
+                    }
+                }
+                AppCommand::StopPlayback => {
+                    // Stop webtorrent and cast
+                    let _ = stop_playback().await;
+                    AppMessage::PlaybackStopped
+                }
+                AppCommand::RestartWithSubtitles { magnet, title, device, subtitle_url, seek_seconds } => {
+                    // Restart playback with subtitles at saved position
+                    match restart_with_subtitles(&magnet, &title, &device, &subtitle_url, seek_seconds).await {
+                        Ok(msg) => AppMessage::PlaybackStarted { stream_url: msg },
+                        Err(e) => AppMessage::Error(format!("Restart failed: {}", e)),
+                    }
+                }
+                AppCommand::PlaybackControl { action, device } => {
+                    // Send control command to catt
+                    let _ = playback_control(&action, &device).await;
+                    // No message needed - fire and forget
+                    return;
+                }
+                AppCommand::SaveSettings { subtitle_lang, device_name } => {
+                    // Save settings to config file
+                    let mut cfg = Config::load();
+                    cfg.default_subtitle_lang = Some(subtitle_lang);
+                    cfg.default_device = device_name;
+                    let _ = cfg.save();
+                    return;
                 }
             };
             let _ = msg_tx.send(result);
@@ -320,6 +377,16 @@ fn render_ui(frame: &mut Frame, app: &App) {
     // Render error overlay if present
     if let Some(ref error) = app.error {
         render_error_popup(frame, area, error);
+    }
+
+    // Render device selection modal if open
+    if app.show_device_modal {
+        render_device_modal(frame, area, app);
+    }
+
+    // Render settings modal if open
+    if app.show_settings_modal {
+        render_settings_modal(frame, area, app);
     }
 }
 
@@ -609,7 +676,9 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App) {
 
     match detail {
         DetailState::Movie { detail, .. } => render_movie_detail(frame, area, detail),
-        DetailState::Tv { detail, .. } => render_tv_detail(frame, area, detail),
+        DetailState::Tv { detail, season_list, episode_list, episodes, selected_season, focus, .. } => {
+            render_tv_detail(frame, area, detail, season_list, episode_list, episodes, *selected_season, *focus);
+        }
     }
 }
 
@@ -691,8 +760,19 @@ fn render_movie_detail(frame: &mut Frame, area: Rect, movie: &crate::models::Mov
     frame.render_widget(content, inner);
 }
 
-/// Render TV show detail view
-fn render_tv_detail(frame: &mut Frame, area: Rect, tv: &crate::models::TvDetail) {
+/// Render TV show detail view with season/episode selection
+fn render_tv_detail(
+    frame: &mut Frame,
+    area: Rect,
+    tv: &crate::models::TvDetail,
+    season_list: &ListState,
+    episode_list: &ListState,
+    episodes: &[Episode],
+    selected_season: u8,
+    focus: TvFocus,
+) {
+    use ratatui::layout::{Constraint, Direction, Layout};
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -702,13 +782,13 @@ fn render_tv_detail(frame: &mut Frame, area: Rect, tv: &crate::models::TvDetail)
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Format seasons
-    let seasons_str = format!("{} season{}", tv.seasons.len(), if tv.seasons.len() == 1 { "" } else { "s" });
+    // Split into header (info) and body (seasons/episodes)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Min(5), Constraint::Length(2)])
+        .split(inner);
 
-    // Format genres
-    let genres_str = tv.genres.join(" · ");
-
-    // Rating color based on score
+    // Header: Title, year, rating, genres
     let rating_style = if tv.vote_average >= 7.0 {
         Theme::success()
     } else if tv.vote_average >= 5.0 {
@@ -717,50 +797,101 @@ fn render_tv_detail(frame: &mut Frame, area: Rect, tv: &crate::models::TvDetail)
         Theme::dimmed()
     };
 
-    // Build content lines
-    let mut lines = vec![
-        // Title line with year and rating
+    let header_lines = vec![
         Line::from(vec![
             Span::styled(format!("{} ", tv.name), Theme::highlighted()),
             Span::styled(format!("({}) ", tv.year), Theme::year()),
             Span::styled(format!("★ {:.1}", tv.vote_average), rating_style),
         ]),
-        Line::from(""),
-        // Seasons and genres
-        Line::from(vec![
-            Span::styled(seasons_str, Theme::accent()),
-            Span::styled(" │ ", Theme::dimmed()),
-            Span::styled(genres_str, Theme::secondary()),
-        ]),
-        Line::from(""),
+        Line::from(Span::styled(tv.genres.join(" · "), Theme::secondary())),
     ];
+    let header = Paragraph::new(header_lines);
+    frame.render_widget(header, chunks[0]);
 
-    // Add overview with word wrapping
-    let overview_width = inner.width.saturating_sub(4) as usize;
-    if !tv.overview.is_empty() {
-        for line in wrap_text(&tv.overview, overview_width) {
-            lines.push(Line::from(Span::styled(line, Theme::text())));
-        }
+    // Body: Split into seasons (left) and episodes (right)
+    let body_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(20), Constraint::Min(30)])
+        .split(chunks[1]);
+
+    // Seasons list
+    let season_items: Vec<ListItem> = tv
+        .seasons
+        .iter()
+        .map(|s| {
+            let style = if s.season_number == selected_season {
+                Theme::selected()
+            } else {
+                Theme::text()
+            };
+            ListItem::new(format!("Season {} ({} ep)", s.season_number, s.episode_count))
+                .style(style)
+        })
+        .collect();
+
+    let seasons_focused = focus == TvFocus::Seasons;
+    let seasons_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if seasons_focused { BorderType::Double } else { BorderType::Rounded })
+        .border_style(if seasons_focused { Theme::accent() } else { Theme::border() })
+        .title(Span::styled(" Seasons ", if seasons_focused { Theme::highlighted() } else { Theme::accent() }));
+
+    let seasons_widget = List::new(season_items)
+        .block(seasons_block)
+        .highlight_style(Theme::highlighted())
+        .highlight_symbol("▸ ");
+
+    // Convert our ListState to ratatui's ListState
+    let mut ratatui_season_state = ratatui::widgets::ListState::default();
+    ratatui_season_state.select(Some(season_list.selected));
+    frame.render_stateful_widget(seasons_widget, body_chunks[0], &mut ratatui_season_state);
+
+    // Episodes list
+    let episode_items: Vec<ListItem> = episodes
+        .iter()
+        .map(|ep| {
+            ListItem::new(format!("E{:02} {}", ep.episode, ep.name))
+                .style(Theme::text())
+        })
+        .collect();
+
+    let episodes_title = if episodes.is_empty() {
+        " Episodes (loading...) ".to_string()
     } else {
-        lines.push(Line::from(Span::styled("No overview available.", Theme::dimmed())));
-    }
+        format!(" Episodes ({}) ", episodes.len())
+    };
 
-    // Add spacing before keybinds
-    lines.push(Line::from(""));
-    lines.push(Line::from(""));
+    let episodes_focused = focus == TvFocus::Episodes;
+    let episodes_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if episodes_focused { BorderType::Double } else { BorderType::Rounded })
+        .border_style(if episodes_focused { Theme::accent() } else { Theme::border() })
+        .title(Span::styled(episodes_title, if episodes_focused { Theme::highlighted() } else { Theme::accent() }));
 
-    // Keybind hints
-    lines.push(Line::from(vec![
-        Span::styled("  c  ", Theme::keybind()),
-        Span::styled("View sources    ", Theme::dimmed()),
-        Span::styled("  u  ", Theme::keybind()),
-        Span::styled("Subtitles    ", Theme::dimmed()),
-        Span::styled(" ESC ", Theme::keybind()),
-        Span::styled("Back", Theme::dimmed()),
-    ]));
+    let episodes_widget = List::new(episode_items)
+        .block(episodes_block)
+        .highlight_style(Theme::highlighted())
+        .highlight_symbol("▸ ");
 
-    let content = Paragraph::new(lines);
-    frame.render_widget(content, inner);
+    // Convert our ListState to ratatui's ListState
+    let mut ratatui_episode_state = ratatui::widgets::ListState::default();
+    ratatui_episode_state.select(Some(episode_list.selected));
+    frame.render_stateful_widget(episodes_widget, body_chunks[1], &mut ratatui_episode_state);
+
+    // Footer: Keybind hints
+    let footer = Line::from(vec![
+        Span::styled("Tab", Theme::keybind()),
+        Span::styled(":switch  ", Theme::dimmed()),
+        Span::styled("↑↓", Theme::keybind()),
+        Span::styled(":select  ", Theme::dimmed()),
+        Span::styled("Enter", Theme::keybind()),
+        Span::styled(":sources  ", Theme::dimmed()),
+        Span::styled("u", Theme::keybind()),
+        Span::styled(":subtitles  ", Theme::dimmed()),
+        Span::styled("ESC", Theme::keybind()),
+        Span::styled(":back", Theme::dimmed()),
+    ]);
+    frame.render_widget(Paragraph::new(footer), chunks[2]);
 }
 
 /// Wrap text to fit within a given width
@@ -821,7 +952,13 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Build source list
+    // Split into list (left) and detail panel (right)
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(inner);
+
+    // Build compact source list for left panel
     let items: Vec<ListItem> = app
         .sources
         .sources
@@ -846,6 +983,15 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
                 Theme::seeds_low()
             };
 
+            // Truncate title for compact display (use chars to handle UTF-8 properly)
+            let max_title_len = chunks[0].width.saturating_sub(22) as usize;
+            let title_chars: Vec<char> = source.title.chars().collect();
+            let truncated_title = if title_chars.len() > max_title_len {
+                format!("{}…", title_chars[..max_title_len.saturating_sub(1)].iter().collect::<String>())
+            } else {
+                source.title.clone()
+            };
+
             let line = Line::from(vec![
                 Span::styled(
                     marker,
@@ -858,7 +1004,7 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
                 Span::styled(format!("{:6}", source.quality), quality_style),
                 Span::raw(" "),
                 Span::styled(
-                    &source.title,
+                    truncated_title,
                     if is_selected {
                         Theme::highlighted()
                     } else {
@@ -866,9 +1012,7 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
                     },
                 ),
                 Span::raw(" "),
-                Span::styled(source.format_size(), Theme::file_size()),
-                Span::raw(" "),
-                Span::styled(format!("👤 {}", source.seeds), seeds_style),
+                Span::styled(format!("👤{:>4}", source.seeds), seeds_style),
             ]);
 
             ListItem::new(line)
@@ -876,11 +1020,93 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let list = List::new(items).style(Theme::text());
-    frame.render_widget(list, inner);
+    frame.render_widget(list, chunks[0]);
+
+    // Render detail panel for selected source
+    render_source_detail(frame, chunks[1], app);
+}
+
+/// Render the detail panel for the selected source
+fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
+    let detail_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Theme::border())
+        .title(Span::styled(" DETAILS ", Theme::title()));
+
+    let detail_inner = detail_block.inner(area);
+    frame.render_widget(detail_block, area);
+
+    let selected_source = app.sources.sources.get(app.sources.list.selected);
+    let Some(source) = selected_source else {
+        let empty = Paragraph::new("No source selected")
+            .style(Theme::dimmed())
+            .alignment(Alignment::Center);
+        frame.render_widget(empty, detail_inner);
+        return;
+    };
+
+    let quality_style = match source.quality {
+        crate::models::Quality::UHD4K => Theme::quality_4k(),
+        crate::models::Quality::FHD1080p => Theme::quality_1080p(),
+        crate::models::Quality::HD720p => Theme::quality_720p(),
+        _ => Theme::quality_sd(),
+    };
+
+    let seeds_style = if source.seeds >= 100 {
+        Theme::seeds_high()
+    } else if source.seeds >= 10 {
+        Theme::seeds_medium()
+    } else {
+        Theme::seeds_low()
+    };
+
+    // Build detail lines
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Quality: ", Theme::dimmed()),
+            Span::styled(format!("{}", source.quality), quality_style),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Size: ", Theme::dimmed()),
+            Span::styled(source.format_size(), Theme::file_size()),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Seeds: ", Theme::dimmed()),
+            Span::styled(format!("{}", source.seeds), seeds_style),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled("Title:", Theme::dimmed())]),
+    ];
+
+    // Wrap the title text to fit the panel width
+    let title_width = detail_inner.width.saturating_sub(2) as usize;
+    let title = &source.title;
+    for chunk in title.chars().collect::<Vec<_>>().chunks(title_width) {
+        lines.push(Line::from(Span::styled(
+            chunk.iter().collect::<String>(),
+            Theme::text(),
+        )));
+    }
+
+    // Add provider info if available
+    if !source.name.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Provider: ", Theme::dimmed()),
+            Span::styled(&source.name, Theme::text()),
+        ]));
+    }
+
+    let detail_paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(detail_paragraph, detail_inner);
 }
 
 /// Render subtitles view
 fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
+    let filter_display = app.subtitles.lang_filter.display();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -888,7 +1114,12 @@ fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
         .title(Span::styled(
             format!(" SUBTITLES ({}) ", app.subtitles.subtitles.len()),
             Theme::title(),
-        ));
+        ))
+        .title_bottom(Line::from(vec![
+            Span::styled(" Tab:", Theme::dimmed()),
+            Span::styled(filter_display, Theme::accent()),
+            Span::styled("  ↑↓:select  Enter:use  n:none  ESC:back ", Theme::dimmed()),
+        ]));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -902,7 +1133,7 @@ fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     if app.subtitles.subtitles.is_empty() {
-        let empty = Paragraph::new("No subtitles available")
+        let empty = Paragraph::new("No subtitles available\n\nPress Tab to change language filter")
             .style(Theme::dimmed())
             .alignment(Alignment::Center);
         frame.render_widget(empty, inner);
@@ -944,78 +1175,231 @@ fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let list = List::new(items).style(Theme::text());
-    frame.render_widget(list, inner);
+    let list = List::new(items)
+        .style(Theme::text())
+        .highlight_style(Theme::highlighted());
+
+    // Convert app ListState to ratatui ListState for scrolling
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(app.subtitles.list.selected));
+
+    frame.render_stateful_widget(list, inner, &mut list_state);
 }
 
-/// Render now playing view
+/// Render now playing view - a nice centered video player interface
 fn render_playing(frame: &mut Frame, area: Rect, app: &App) {
+    // Main container
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Theme::border_focused())
-        .title(Span::styled(" ▶ NOW PLAYING ", Theme::success()));
+        .border_type(BorderType::Double)
+        .border_style(Theme::accent())
+        .style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let playback = app.playing.playback.as_ref();
+    // Layout: top spacer, player card, bottom controls
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),      // Top spacer
+            Constraint::Length(16),  // Player card
+            Constraint::Length(3),   // Controls
+            Constraint::Min(1),      // Bottom spacer
+        ])
+        .split(inner);
 
-    let content: Vec<Line> = if let Some(status) = playback {
-        let pos = status.position.as_secs();
-        let dur = status.duration.as_secs();
-        let progress = if dur > 0 {
-            pos as f64 / dur as f64
-        } else {
-            0.0
-        };
-        let filled = (progress * 40.0) as usize;
-        let empty = 40 - filled;
-
-        vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                app.playing.title.clone(),
-                ratatui::style::Style::default()
-                    .fg(Theme::PRIMARY)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(format!("{}{}", "█".repeat(filled), "░".repeat(empty))),
-            Line::from(Span::styled(
-                format!(
-                    "{:02}:{:02} / {:02}:{:02}",
-                    pos / 60,
-                    pos % 60,
-                    dur / 60,
-                    dur % 60
-                ),
-                Theme::dimmed(),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("Volume: {:.0}%", status.volume * 100.0),
-                Theme::text(),
-            )),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" SPACE ", Theme::keybind()),
-                Span::styled("Play/Pause  ", Theme::dimmed()),
-                Span::styled(" ←→ ", Theme::keybind()),
-                Span::styled("Seek  ", Theme::dimmed()),
-                Span::styled(" ↑↓ ", Theme::keybind()),
-                Span::styled("Volume", Theme::dimmed()),
-            ]),
-        ]
-    } else {
-        vec![
-            Line::from(""),
-            Line::from(Span::styled("Connecting...", Theme::loading())),
-        ]
+    // Center the player card horizontally
+    let card_width = 60.min(layout[1].width);
+    let card_area = Rect {
+        x: layout[1].x + (layout[1].width.saturating_sub(card_width)) / 2,
+        y: layout[1].y,
+        width: card_width,
+        height: layout[1].height,
     };
 
-    let para = Paragraph::new(content).alignment(Alignment::Center);
-    frame.render_widget(para, inner);
+    // Player card with double border
+    let card_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Theme::border_focused())
+        .title(Span::styled(" ▶ NOW PLAYING ", Theme::success()))
+        .title_alignment(Alignment::Center);
+
+    let card_inner = card_block.inner(card_area);
+    frame.render_widget(card_block, card_area);
+
+    // Get device name for display
+    let device_name = app
+        .playing
+        .device
+        .as_ref()
+        .map(|d| d.name.as_str())
+        .or_else(|| {
+            app.selected_device
+                .and_then(|i| app.cast_devices.get(i))
+                .map(|d| d.name.as_str())
+        })
+        .unwrap_or("Unknown");
+
+    // Animated spinner for loading states
+    let spinner_frame = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        / 150) % 8;
+    let spinner = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"][spinner_frame as usize];
+
+    // Build player content based on state
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Title (truncate if needed)
+    let title = if app.playing.title.len() > card_inner.width as usize - 4 {
+        format!("{}...", &app.playing.title[..card_inner.width as usize - 7])
+    } else {
+        app.playing.title.clone()
+    };
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        title,
+        ratatui::style::Style::default()
+            .fg(Theme::PRIMARY)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+
+    // Device indicator
+    lines.push(Line::from(vec![
+        Span::styled("📺 ", Theme::text()),
+        Span::styled(device_name, Theme::accent()),
+    ]));
+    lines.push(Line::from(""));
+
+    if let Some(ref status) = app.playing.playback {
+        // Active playback - show progress
+        let pos = status.position.as_secs();
+        let dur = status.duration.as_secs();
+        let progress = if dur > 0 { pos as f64 / dur as f64 } else { 0.0 };
+
+        // Progress bar
+        let bar_width = (card_inner.width as usize).saturating_sub(8).min(40);
+        let filled = (progress * bar_width as f64) as usize;
+        let empty = bar_width.saturating_sub(filled);
+
+        let state_icon = match status.state {
+            CastState::Playing => "▶",
+            CastState::Paused => "⏸",
+            CastState::Buffering => spinner,
+            _ => "●",
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", state_icon), Theme::success()),
+            Span::styled("▓".repeat(filled), Theme::accent()),
+            Span::styled("░".repeat(empty), Theme::dimmed()),
+        ]));
+
+        // Time display
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{:02}:{:02} / {:02}:{:02}",
+                pos / 60, pos % 60, dur / 60, dur % 60
+            ),
+            Theme::dimmed(),
+        )));
+
+        // Volume
+        lines.push(Line::from(""));
+        let vol_bars = (status.volume * 10.0) as usize;
+        lines.push(Line::from(vec![
+            Span::styled("🔊 ", Theme::text()),
+            Span::styled("█".repeat(vol_bars), Theme::accent()),
+            Span::styled("░".repeat(10 - vol_bars), Theme::dimmed()),
+            Span::styled(format!(" {:.0}%", status.volume * 100.0), Theme::dimmed()),
+        ]));
+    } else if let Some(ref torrent) = app.playing.torrent {
+        // Connecting/buffering state
+        let state_text = torrent.state.to_string();
+
+        // Visual streaming animation
+        let anim_frame = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            / 100) % 20;
+
+        let wave: String = (0..20)
+            .map(|i| {
+                let dist = ((i as i64 - anim_frame as i64).abs() % 20) as usize;
+                if dist < 3 { '█' } else if dist < 5 { '▓' } else if dist < 7 { '▒' } else { '░' }
+            })
+            .collect();
+
+        lines.push(Line::from(Span::styled(wave, Theme::accent())));
+        lines.push(Line::from(""));
+
+        // Status with spinner
+        lines.push(Line::from(vec![
+            Span::styled(format!("{} ", spinner), Theme::accent()),
+            Span::styled(state_text, Theme::loading()),
+        ]));
+
+        // Hint for 0 peers
+        if torrent.state.peers() == Some(0) {
+            lines.push(Line::from(Span::styled(
+                "Searching DHT for peers...",
+                Theme::dimmed(),
+            )));
+        }
+
+        // Buffering progress
+        if let TorrentState::Buffering { progress, .. } = torrent.state {
+            lines.push(Line::from(""));
+            let bar_width = 30;
+            let filled = (progress as usize * bar_width) / 100;
+            lines.push(Line::from(vec![
+                Span::styled("▓".repeat(filled), Theme::success()),
+                Span::styled("░".repeat(bar_width - filled), Theme::dimmed()),
+                Span::styled(format!(" {}%", progress), Theme::text()),
+            ]));
+        }
+    } else {
+        // Fallback - initializing
+        lines.push(Line::from(vec![
+            Span::styled(format!("{} ", spinner), Theme::accent()),
+            Span::styled("Initializing...", Theme::loading()),
+        ]));
+    }
+
+    let para = Paragraph::new(lines).alignment(Alignment::Center);
+    frame.render_widget(para, card_inner);
+
+    // Bottom controls bar
+    let controls_area = Rect {
+        x: inner.x + (inner.width.saturating_sub(card_width)) / 2,
+        y: layout[2].y,
+        width: card_width,
+        height: 3,
+    };
+
+    let controls = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" SPACE ", Theme::keybind()),
+            Span::styled("Play/Pause ", Theme::dimmed()),
+            Span::styled(" ←→ ", Theme::keybind()),
+            Span::styled("Seek ", Theme::dimmed()),
+            Span::styled(" ↑↓ ", Theme::keybind()),
+            Span::styled("Vol ", Theme::dimmed()),
+            Span::styled(" u ", Theme::keybind()),
+            Span::styled("Subs ", Theme::dimmed()),
+            Span::styled(" s ", Theme::keybind()),
+            Span::styled("Stop", Theme::dimmed()),
+        ]),
+    ])
+    .alignment(Alignment::Center);
+    frame.render_widget(controls, controls_area);
 }
 
 /// Render status bar at bottom
@@ -1046,7 +1430,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(" No device ", Theme::dimmed())
     };
 
-    let help = Span::styled(" q:quit  /:search  ESC:back ", Theme::dimmed());
+    let help = Span::styled(" q:quit  /:search  d:device  o:settings  ESC:back ", Theme::dimmed());
 
     let status_line = Line::from(vec![
         mode_indicator,
@@ -1091,4 +1475,380 @@ fn render_error_popup(frame: &mut Frame, area: Rect, error: &str) {
     );
 
     frame.render_widget(error_block, popup_area);
+}
+
+/// Render device selection modal
+fn render_device_modal(frame: &mut Frame, area: Rect, app: &App) {
+    // Calculate centered popup
+    let popup_width = 50.min(area.width.saturating_sub(4));
+    let popup_height = (app.cast_devices.len() as u16 + 4).min(15).max(6);
+
+    let popup_area = Rect {
+        x: area.x + (area.width.saturating_sub(popup_width)) / 2,
+        y: area.y + (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Theme::accent())
+        .title(Span::styled(" 📺 SELECT DEVICE ", Theme::title()))
+        .style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    if app.cast_devices.is_empty() {
+        let msg = Paragraph::new("Scanning for devices...")
+            .style(Theme::loading())
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, inner);
+    } else {
+        let items: Vec<ListItem> = app
+            .cast_devices
+            .iter()
+            .enumerate()
+            .map(|(i, device)| {
+                let is_selected = i == app.device_modal_index;
+                let marker = if is_selected { "▸ " } else { "  " };
+                let style = if is_selected {
+                    Theme::highlighted()
+                } else {
+                    Theme::text()
+                };
+                let model = device.model.as_deref().unwrap_or("Chromecast");
+                ListItem::new(Line::from(vec![
+                    Span::styled(marker, if is_selected { Theme::accent() } else { Theme::dimmed() }),
+                    Span::styled(&device.name, style),
+                    Span::styled(format!(" ({})", model), Theme::dimmed()),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items);
+        frame.render_widget(list, inner);
+    }
+
+    // Help text at bottom
+    let help_area = Rect {
+        x: popup_area.x + 1,
+        y: popup_area.y + popup_area.height - 2,
+        width: popup_area.width - 2,
+        height: 1,
+    };
+    let help = Paragraph::new("↑↓:select  Enter:confirm  r:refresh  Esc:close")
+        .style(Theme::dimmed())
+        .alignment(Alignment::Center);
+    frame.render_widget(help, help_area);
+}
+
+fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
+    // Calculate centered popup
+    let popup_width = 45.min(area.width.saturating_sub(4));
+    let popup_height = 10;
+
+    let popup_area = Rect {
+        x: area.x + (area.width.saturating_sub(popup_width)) / 2,
+        y: area.y + (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Theme::accent())
+        .title(Span::styled(" SETTINGS ", Theme::title()))
+        .style(ratatui::style::Style::default().bg(Theme::BACKGROUND));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Language field
+    let lang_label_style = if app.settings_field_index == 0 {
+        Theme::highlighted()
+    } else {
+        Theme::text()
+    };
+    let lang_marker = if app.settings_field_index == 0 { "▸ " } else { "  " };
+    let lang_value = if app.settings_field_index == 0 {
+        format!("[{}]", app.settings_lang_input)
+    } else {
+        app.default_subtitle_lang.clone()
+    };
+
+    let lang_line = Line::from(vec![
+        Span::styled(lang_marker, if app.settings_field_index == 0 { Theme::accent() } else { Theme::dimmed() }),
+        Span::styled("Subtitle language: ", lang_label_style),
+        Span::styled(lang_value, if app.settings_field_index == 0 { Theme::accent() } else { Theme::dimmed() }),
+    ]);
+
+    // Device field (read-only info, use 'd' to change)
+    let device_label_style = if app.settings_field_index == 1 {
+        Theme::highlighted()
+    } else {
+        Theme::text()
+    };
+    let device_marker = if app.settings_field_index == 1 { "▸ " } else { "  " };
+    let device_name = app
+        .selected_device
+        .and_then(|i| app.cast_devices.get(i))
+        .map(|d| d.name.as_str())
+        .unwrap_or("None (press 'd' to select)");
+
+    let device_line = Line::from(vec![
+        Span::styled(device_marker, if app.settings_field_index == 1 { Theme::accent() } else { Theme::dimmed() }),
+        Span::styled("Default device: ", device_label_style),
+        Span::styled(device_name, Theme::dimmed()),
+    ]);
+
+    let content = Paragraph::new(vec![
+        Line::from(""),
+        lang_line,
+        Line::from(""),
+        device_line,
+        Line::from(""),
+    ]);
+    frame.render_widget(content, inner);
+
+    // Help text at bottom
+    let help_area = Rect {
+        x: popup_area.x + 1,
+        y: popup_area.y + popup_area.height - 2,
+        width: popup_area.width - 2,
+        height: 1,
+    };
+    let help = Paragraph::new("↑↓:navigate  Enter:save  Esc:close")
+        .style(Theme::dimmed())
+        .alignment(Alignment::Center);
+    frame.render_widget(help, help_area);
+}
+
+// =============================================================================
+// Playback Functions
+// =============================================================================
+
+/// Discover Chromecast devices using catt scan
+async fn discover_cast_devices() -> anyhow::Result<Vec<CastDevice>> {
+    let output = tokio::process::Command::new("catt")
+        .arg("scan")
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("not found") || stderr.contains("No such file") {
+            anyhow::bail!("catt not found. Install with: pip install catt");
+        }
+        anyhow::bail!("catt scan failed: {}", stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let devices = CastDevice::parse_catt_scan(&stdout);
+
+    // Also try stderr (catt sometimes outputs there)
+    if devices.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Ok(CastDevice::parse_catt_scan(&stderr));
+    }
+
+    Ok(devices)
+}
+
+/// Kill any running webtorrent processes on TUI exit
+fn cleanup_torrent_processes() {
+    // Kill webtorrent processes spawned by this app
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "webtorrent"])
+        .output();
+}
+
+/// Start playback: webtorrent with native chromecast support
+async fn start_playback(
+    magnet: &str,
+    _title: &str,
+    device: &str,
+    subtitle_url: Option<&str>,
+) -> anyhow::Result<String> {
+    // Download subtitle file if URL provided (webtorrent needs local file path)
+    let subtitle_path = if let Some(url) = subtitle_url {
+        match download_subtitle(url).await {
+            Ok(path) => Some(path),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    // Escape the magnet URL for shell (it contains special chars)
+    let escaped_magnet = magnet.replace('\'', "'\\''");
+    let escaped_device = device.replace('\'', "'\\''");
+
+    // Build command with optional subtitles
+    let subtitle_arg = subtitle_path
+        .as_ref()
+        .map(|p| format!(" --subtitles '{}'", p.replace('\'', "'\\''")))
+        .unwrap_or_default();
+
+    // Use nohup + --quiet to fully detach from terminal
+    // --quiet suppresses webtorrent's interactive UI
+    let shell_cmd = format!(
+        "nohup webtorrent '{}' --chromecast '{}'{} --quiet --not-on-top </dev/null >/dev/null 2>&1 &",
+        escaped_magnet, escaped_device, subtitle_arg
+    );
+
+    let child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&shell_cmd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("sh not found")
+            } else {
+                anyhow::anyhow!("Failed to start webtorrent: {}", e)
+            }
+        })?;
+
+    // Wait for shell to spawn the background process
+    std::mem::forget(child);
+
+    let msg = if subtitle_path.is_some() {
+        format!("Casting to {} (with subtitles)", device)
+    } else {
+        format!("Casting to {}", device)
+    };
+    Ok(msg)
+}
+
+/// Download subtitle file to temp directory
+async fn download_subtitle(url: &str) -> anyhow::Result<String> {
+    use std::io::Write;
+
+    let client = reqwest::Client::new();
+    let response = client.get(url).send().await?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("Failed to download subtitle: HTTP {}", response.status());
+    }
+
+    let bytes = response.bytes().await?;
+
+    // Create temp file with .srt extension
+    let temp_dir = std::env::temp_dir();
+    let filename = format!("streamtui_sub_{}.srt", std::process::id());
+    let path = temp_dir.join(filename);
+
+    let mut file = std::fs::File::create(&path)?;
+    file.write_all(&bytes)?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Stop playback - kill webtorrent processes
+async fn stop_playback() -> anyhow::Result<()> {
+    // Kill any running webtorrent processes
+    let _ = tokio::process::Command::new("pkill")
+        .arg("-f")
+        .arg("webtorrent")
+        .output()
+        .await;
+
+    // Stop catt playback
+    let _ = tokio::process::Command::new("catt")
+        .arg("stop")
+        .output()
+        .await;
+
+    Ok(())
+}
+
+/// Restart playback with subtitles at a specific position
+async fn restart_with_subtitles(
+    magnet: &str,
+    _title: &str,
+    device: &str,
+    subtitle_url: &str,
+    seek_seconds: u32,
+) -> anyhow::Result<String> {
+    // 1. Stop current playback
+    stop_playback().await?;
+
+    // Small delay to ensure clean stop
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // 2. Download subtitle file
+    let subtitle_path = download_subtitle(subtitle_url).await?;
+
+    // 3. Start webtorrent with subtitle
+    let escaped_magnet = magnet.replace('\'', "'\\''");
+    let escaped_device = device.replace('\'', "'\\''");
+    let escaped_subtitle = subtitle_path.replace('\'', "'\\''");
+
+    let shell_cmd = format!(
+        "nohup webtorrent '{}' --chromecast '{}' --subtitles '{}' --quiet --not-on-top </dev/null >/dev/null 2>&1 &",
+        escaped_magnet, escaped_device, escaped_subtitle
+    );
+
+    let child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&shell_cmd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+
+    std::mem::forget(child);
+
+    // 4. Wait for stream to start buffering (webtorrent needs time to connect)
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+    // 5. Seek to saved position
+    if seek_seconds > 0 {
+        let _ = tokio::process::Command::new("catt")
+            .args(["-d", device, "seek", &seek_seconds.to_string()])
+            .output()
+            .await;
+    }
+
+    Ok(format!("Restarted with subtitles at {}s", seek_seconds))
+}
+
+/// Send playback control command to catt
+async fn playback_control(action: &str, device: &str) -> anyhow::Result<()> {
+    let mut args = vec!["-d".to_string(), device.to_string()];
+
+    // Map action to catt command
+    match action {
+        "play_toggle" => args.push("play_toggle".to_string()),
+        "pause" => args.push("pause".to_string()),
+        "play" => args.push("play".to_string()),
+        "stop" => args.push("stop".to_string()),
+        "volumeup" => args.push("volumeup".to_string()),
+        "volumedown" => args.push("volumedown".to_string()),
+        "ffwd" => {
+            args.push("ffwd".to_string());
+            args.push("30".to_string()); // 30 seconds forward
+        }
+        "rewind" => {
+            args.push("rewind".to_string());
+            args.push("30".to_string()); // 30 seconds back
+        }
+        _ => anyhow::bail!("Unknown action: {}", action),
+    }
+
+    tokio::process::Command::new("catt")
+        .args(&args)
+        .output()
+        .await?;
+
+    Ok(())
 }

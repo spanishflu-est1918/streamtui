@@ -519,20 +519,22 @@ mod device_parsing {
 
     #[test]
     fn test_parse_catt_scan_single_device() {
-        let output = "Living Room TV - 192.168.1.50";
+        // catt 0.13+ format: "IP - Name - Model"
+        let output = "192.168.1.50 - Living Room TV - Google Inc. Chromecast";
         let devices = CastDevice::parse_catt_scan(output);
 
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].name, "Living Room TV");
         assert_eq!(devices[0].address.to_string(), "192.168.1.50");
+        assert_eq!(devices[0].model, Some("Google Inc. Chromecast".to_string()));
     }
 
     #[test]
     fn test_parse_catt_scan_multiple_devices() {
         let output = r#"
-Living Room TV - 192.168.1.50
-Bedroom TV - 192.168.1.51
-Kitchen Speaker - 192.168.1.52
+192.168.1.50 - Living Room TV - Google Inc. Chromecast Ultra
+192.168.1.51 - Bedroom TV - Google Inc. Chromecast
+192.168.1.52 - Kitchen Speaker - Google Inc. Chromecast Audio
 "#;
         let devices = CastDevice::parse_catt_scan(output);
 
@@ -545,9 +547,8 @@ Kitchen Speaker - 192.168.1.52
     #[test]
     fn test_parse_catt_scan_with_scanning_message() {
         let output = r#"
-Scanning for Chromecast devices...
-Living Room TV - 192.168.1.50
-1 device found
+Scanning Chromecasts...
+192.168.1.50 - Living Room TV - Google Inc. Chromecast
 "#;
         let devices = CastDevice::parse_catt_scan(output);
 
@@ -572,9 +573,9 @@ Living Room TV - 192.168.1.50
     fn test_parse_catt_scan_invalid_lines() {
         let output = r#"
 Some random text
-Living Room TV - 192.168.1.50
+192.168.1.50 - Living Room TV - Google Inc. Chromecast
 Invalid line without IP
-Another Device - not.an.ip.address
+not.an.ip.address - Another Device - Model
 "#;
         let devices = CastDevice::parse_catt_scan(output);
 
@@ -764,7 +765,7 @@ mod subtitle_result {
     ) -> SubtitleResult {
         SubtitleResult {
             id: "123".to_string(),
-            file_id: 123,
+            url: "https://subs.strem.io/123".to_string(),
             language: "en".to_string(),
             language_name: "English".to_string(),
             release: "The.Batman.2022.1080p".to_string(),

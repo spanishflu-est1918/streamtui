@@ -1,40 +1,47 @@
 # Subtitles Specification
 
 ## Overview
-Subtitle search, download, and casting integration.
+Subtitle search, download, and casting integration using Stremio's free public endpoint.
 
-## Sources
+## Source
 
-### OpenSubtitles.com API
-Primary source. REST API with good coverage.
+### Stremio OpenSubtitles Addon
+Free public endpoint - no API key required.
 
-Base URL: `https://api.opensubtitles.com/api/v1`
-Auth: API key in header
-
-### Stremio Subtitle Addons (Alternative)
-- `opensubtitles-v3` addon
-- Query same as other Stremio addons
+Base URL: `https://opensubtitles-v3.strem.io`
 
 ## API Endpoints
 
-### Search Subtitles
+### Search Movie Subtitles
 ```
-GET /subtitles
-?imdb_id={imdb_id}
-&languages=en,es
-&type=movie|episode
-&season_number=1
-&episode_number=1
+GET /subtitles/movie/{imdb_id}.json
 ```
 
-### Download Subtitle
+Example: `/subtitles/movie/tt1877830.json`
+
+### Search Episode Subtitles
 ```
-POST /download
+GET /subtitles/series/{imdb_id}:{season}:{episode}.json
+```
+
+Example: `/subtitles/series/tt0903747:1:1.json`
+
+### Response Format
+```json
 {
-  "file_id": 123456
+  "subtitles": [
+    {
+      "id": "55419",
+      "url": "https://subs5.strem.io/en/download/file/70235",
+      "lang": "eng",
+      "SubEncoding": "CP1252"
+    }
+  ],
+  "cacheMaxAge": 14400
 }
 ```
-Returns download link (rate limited).
+
+Note: Language codes are 3-letter ISO codes (eng, spa, fre, etc.)
 
 ## Data Models
 
@@ -42,16 +49,16 @@ Returns download link (rate limited).
 ```rust
 struct SubtitleResult {
     id: String,
-    file_id: u64,
-    language: String,       // "en", "es", etc.
-    language_name: String,  // "English", "Spanish"
-    release: String,        // "The.Batman.2022.1080p.BluRay"
-    fps: Option<f32>,       // Frame rate
-    format: SubFormat,      // SRT, WebVTT
-    downloads: u32,         // Popularity indicator
-    from_trusted: bool,     // Verified uploader
-    hearing_impaired: bool, // SDH subtitles
-    ai_translated: bool,    // Machine translated
+    url: String,             // Direct download URL
+    language: String,        // "eng", "spa", etc.
+    language_name: String,   // "English", "Spanish"
+    release: String,         // Release name if available
+    fps: Option<f32>,        // Frame rate
+    format: SubFormat,       // SRT, WebVTT
+    downloads: u32,          // Popularity indicator
+    from_trusted: bool,      // Stremio subs default to trusted
+    hearing_impaired: bool,  // SDH subtitles
+    ai_translated: bool,     // Machine translated
 }
 ```
 
@@ -79,25 +86,28 @@ struct SubtitleFile {
 
 ```rust
 impl SubtitleClient {
+    /// Create client (no API key needed)
+    fn new() -> Self;
+
     /// Search subtitles for movie
-    async fn search_movie(
-        &self, 
-        imdb_id: &str, 
-        languages: &[&str]
+    async fn search(
+        &self,
+        imdb_id: &str,
+        language: Option<&str>
     ) -> Result<Vec<SubtitleResult>>;
-    
+
     /// Search subtitles for TV episode
     async fn search_episode(
         &self,
         imdb_id: &str,
-        season: u8,
-        episode: u8,
-        languages: &[&str]
+        season: u16,
+        episode: u16,
+        language: Option<&str>
     ) -> Result<Vec<SubtitleResult>>;
-    
-    /// Download subtitle to cache
-    async fn download(&self, file_id: u64) -> Result<SubtitleFile>;
-    
+
+    /// Download subtitle to cache (direct URL)
+    async fn download(&self, url: &str) -> Result<SubtitleFile>;
+
     /// Get cached subtitle if exists
     fn get_cached(&self, id: &str) -> Option<SubtitleFile>;
 }
@@ -133,7 +143,7 @@ fn srt_to_webvtt(srt: &str) -> String {
 ## Chromecast Subtitle Integration
 
 When casting with subtitles:
-1. Download subtitle file
+1. Download subtitle file from Stremio URL
 2. Convert to WebVTT if needed
 3. Serve via local HTTP (same as torrent stream)
 4. Pass subtitle track URL to Chromecast
@@ -154,7 +164,7 @@ http://192.168.1.100:8889/subtitles/en.vtt
 Search for subtitles.
 
 ```bash
-$ streamtui subtitles tt1877830 --lang en,es
+$ streamtui subtitles tt1877830 --lang eng
 ```
 
 Output (JSON):
@@ -163,9 +173,8 @@ Output (JSON):
   "subtitles": [
     {
       "id": "12345",
-      "language": "en",
-      "release": "The.Batman.2022.1080p.BluRay",
-      "downloads": 50000,
+      "language": "eng",
+      "url": "https://subs5.strem.io/en/download/file/12345",
       "trusted": true,
       "hearing_impaired": false
     }
@@ -177,8 +186,7 @@ Output (JSON):
 ```bash
 $ streamtui cast tt1877830 \
     --device "Living Room TV" \
-    --subtitle en \
-    --subtitle-id 12345   # optional: specific subtitle
+    --subtitle eng
 ```
 
 ## TUI Integration
@@ -215,24 +223,24 @@ $ streamtui cast tt1877830 \
 Config option for default languages:
 ```toml
 [subtitles]
-languages = ["en", "es"]
-auto_select = true        # Auto-select best match
-prefer_trusted = true     # Prefer verified uploaders
+languages = ["eng", "spa"]  # 3-letter codes
+auto_select = true          # Auto-select best match
+prefer_trusted = true       # Prefer verified uploaders
 prefer_hearing_impaired = false
 ```
 
 ## Tests (TDD)
 
 ### test_search_parses_results
-- Input: Mock OpenSubtitles response
+- Input: Mock Stremio response
 - Expect: Vec<SubtitleResult> with correct fields
 
 ### test_search_filters_language
-- Request with languages = ["en"]
+- Request with language = "eng"
 - Expect: Only English results
 
 ### test_download_caches_file
-- Download subtitle
+- Download subtitle from URL
 - Expect: File exists in cache directory
 - Call again → returns cached, no network request
 
@@ -254,16 +262,15 @@ prefer_hearing_impaired = false
 - Expect: `-s` flag with subtitle URL
 
 ### test_handles_no_subtitles
-- Search returns empty
+- Search returns empty `{"subtitles": []}`
 - Expect: Empty vec, no error
 - UI shows "No subtitles found"
 
-### test_rate_limit_handling
-- OpenSubtitles returns 429
-- Expect: Retry with backoff
-- Expect: Clear error after max retries
-
 ### test_language_priority
-- Results: [es_trusted, en_untrusted, en_trusted]
-- Config: languages = ["en", "es"], prefer_trusted = true
-- Auto-select → en_trusted
+- Results: [spa_trusted, eng_untrusted, eng_trusted]
+- Config: languages = ["eng", "spa"], prefer_trusted = true
+- Auto-select → eng_trusted
+
+### test_imdb_id_normalization
+- Input: "1877830" (without tt prefix)
+- Expect: Request uses "tt1877830"

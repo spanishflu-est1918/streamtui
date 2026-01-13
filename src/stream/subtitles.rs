@@ -1,6 +1,8 @@
-//! OpenSubtitles API client
+//! Stremio Subtitle Client
 //!
-//! Search and download subtitles from OpenSubtitles.
+//! Free subtitle search using Stremio's public addon endpoint.
+//! No API key required - uses Stremio's OpenSubtitles v3 addon.
+//!
 //! Handles SRT to WebVTT conversion for Chromecast.
 //! Caches downloaded subtitles in ~/.cache/streamtui/subtitles/
 
@@ -9,66 +11,34 @@ use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 
-/// OpenSubtitles API client
+/// Subtitle client using Stremio's free public endpoint
+///
+/// Uses Stremio's OpenSubtitles v3 addon - no API key required!
 pub struct SubtitleClient {
     base_url: String,
-    api_key: Option<String>,
     client: reqwest::Client,
     cache_dir: PathBuf,
 }
 
-/// OpenSubtitles API response wrapper
+/// Stremio subtitle response
 #[derive(Debug, Deserialize)]
-struct OpenSubtitlesResponse {
-    data: Vec<OpenSubtitlesEntry>,
-    #[allow(dead_code)]
-    total_count: Option<u32>,
+struct StremioResponse {
+    subtitles: Vec<StremioSubtitle>,
 }
 
-/// Single subtitle entry from OpenSubtitles API
+/// Single subtitle from Stremio
 #[derive(Debug, Deserialize)]
-struct OpenSubtitlesEntry {
+struct StremioSubtitle {
     id: String,
-    attributes: OpenSubtitlesAttributes,
-}
-
-/// Subtitle attributes from OpenSubtitles API
-#[derive(Debug, Deserialize)]
-struct OpenSubtitlesAttributes {
-    language: String,
-    hearing_impaired: bool,
-    ai_translated: bool,
+    url: String,
+    lang: String,
+    #[serde(rename = "SubEncoding")]
     #[allow(dead_code)]
-    machine_translated: bool,
-    from_trusted: bool,
-    download_count: u32,
-    release: String,
-    fps: Option<f32>,
-    files: Vec<OpenSubtitlesFile>,
-}
-
-/// File info from OpenSubtitles API
-#[derive(Debug, Deserialize)]
-struct OpenSubtitlesFile {
-    file_id: u64,
-    #[allow(dead_code)]
-    file_name: String,
-}
-
-/// Download response from OpenSubtitles API
-#[derive(Debug, Deserialize)]
-struct DownloadResponse {
-    link: String,
-    #[allow(dead_code)]
-    file_name: String,
-    #[allow(dead_code)]
-    requests: Option<u32>,
-    #[allow(dead_code)]
-    remaining: Option<u32>,
+    sub_encoding: Option<String>,
 }
 
 impl SubtitleClient {
-    /// Create a new subtitle client
+    /// Create a new subtitle client (free, no API key)
     pub fn new() -> Self {
         let cache_dir = dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
@@ -76,18 +46,10 @@ impl SubtitleClient {
             .join("subtitles");
 
         Self {
-            base_url: "https://api.opensubtitles.com/api/v1".to_string(),
-            api_key: None,
+            base_url: "https://opensubtitles-v3.strem.io".to_string(),
             client: reqwest::Client::new(),
             cache_dir,
         }
-    }
-
-    /// Create with API key for authenticated requests
-    pub fn with_api_key(api_key: impl Into<String>) -> Self {
-        let mut client = Self::new();
-        client.api_key = Some(api_key.into());
-        client
     }
 
     /// Create with custom base URL (for testing)
@@ -99,62 +61,24 @@ impl SubtitleClient {
 
         Self {
             base_url: base_url.into(),
-            api_key: None,
             client: reqwest::Client::new(),
             cache_dir,
         }
     }
 
-    /// Search for subtitles by IMDB ID
+    /// Search for movie subtitles by IMDB ID
     ///
     /// # Arguments
     /// * `imdb_id` - IMDB ID (with or without "tt" prefix)
-    /// * `language` - Optional language code (e.g., "en", "es")
+    /// * `language` - Optional 3-letter language code filter (e.g., "eng", "spa")
     pub async fn search(
         &self,
         imdb_id: &str,
         language: Option<&str>,
     ) -> Result<Vec<SubtitleResult>> {
-        // Strip "tt" prefix and convert to number to remove leading zeros
-        let imdb_num = imdb_id
-            .trim_start_matches("tt")
-            .parse::<u64>()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|_| imdb_id.trim_start_matches("tt").to_string());
-
-        let mut url = format!("{}/subtitles?imdb_id={}", self.base_url, imdb_num);
-
-        if let Some(lang) = language {
-            url.push_str(&format!("&languages={}", lang));
-        }
-
-        let mut request = self.client.get(&url);
-
-        // Add API key header if present
-        if let Some(ref api_key) = self.api_key {
-            request = request.header("Api-Key", api_key);
-        }
-
-        let response = request.send().await?;
-
-        // Handle rate limiting (429)
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(anyhow!("Rate limit exceeded (429 Too Many Requests)"));
-        }
-
-        // Handle 404
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(anyhow!("Not found (404)"));
-        }
-
-        // Handle other errors
-        if !response.status().is_success() {
-            return Err(anyhow!("API error: {}", response.status()));
-        }
-
-        let api_response: OpenSubtitlesResponse = response.json().await?;
-
-        Ok(self.convert_response(api_response))
+        let imdb = normalize_imdb_id(imdb_id);
+        let url = format!("{}/subtitles/movie/{}.json", self.base_url, imdb);
+        self.fetch_subtitles(&url, language).await
     }
 
     /// Search for TV episode subtitles
@@ -162,8 +86,8 @@ impl SubtitleClient {
     /// # Arguments
     /// * `imdb_id` - IMDB ID of the TV show
     /// * `season` - Season number
-    /// * `episode` - Episode number  
-    /// * `language` - Optional language code
+    /// * `episode` - Episode number
+    /// * `language` - Optional 3-letter language code filter
     pub async fn search_episode(
         &self,
         imdb_id: &str,
@@ -171,85 +95,63 @@ impl SubtitleClient {
         episode: u16,
         language: Option<&str>,
     ) -> Result<Vec<SubtitleResult>> {
-        // Strip "tt" prefix and convert to number to remove leading zeros
-        let imdb_num = imdb_id
-            .trim_start_matches("tt")
-            .parse::<u64>()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|_| imdb_id.trim_start_matches("tt").to_string());
-
-        let mut url = format!(
-            "{}/subtitles?imdb_id={}&season_number={}&episode_number={}",
-            self.base_url, imdb_num, season, episode
+        let imdb = normalize_imdb_id(imdb_id);
+        let url = format!(
+            "{}/subtitles/series/{}:{}:{}.json",
+            self.base_url, imdb, season, episode
         );
+        self.fetch_subtitles(&url, language).await
+    }
 
-        if let Some(lang) = language {
-            url.push_str(&format!("&languages={}", lang));
-        }
-
-        let mut request = self.client.get(&url);
-
-        if let Some(ref api_key) = self.api_key {
-            request = request.header("Api-Key", api_key);
-        }
-
-        let response = request.send().await?;
-
-        // Handle rate limiting
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(anyhow!("Rate limit exceeded (429 Too Many Requests)"));
-        }
+    /// Fetch and parse subtitles from Stremio endpoint
+    async fn fetch_subtitles(
+        &self,
+        url: &str,
+        language: Option<&str>,
+    ) -> Result<Vec<SubtitleResult>> {
+        let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow!("API error: {}", response.status()));
+            return Err(anyhow!("Stremio API error: {}", response.status()));
         }
 
-        let api_response: OpenSubtitlesResponse = response.json().await?;
+        let api_response: StremioResponse = response.json().await?;
 
-        Ok(self.convert_response(api_response))
-    }
+        // Convert and optionally filter by language(s)
+        // Supports comma-separated languages like "eng,spa"
+        let langs: Vec<&str> = language
+            .map(|l| l.split(',').map(|s| s.trim()).collect())
+            .unwrap_or_default();
 
-    /// Convert OpenSubtitles API response to our model
-    fn convert_response(&self, response: OpenSubtitlesResponse) -> Vec<SubtitleResult> {
-        response
-            .data
+        let results: Vec<SubtitleResult> = api_response
+            .subtitles
             .into_iter()
-            .filter_map(|entry| {
-                // Get the first file (main subtitle file)
-                let file = entry.attributes.files.first()?;
-
-                // Determine format from filename
-                let format = entry
-                    .attributes
-                    .files
-                    .first()
-                    .map(|f| {
-                        let ext = f.file_name.rsplit('.').next().unwrap_or("srt");
-                        SubFormat::from_extension(ext)
-                    })
-                    .unwrap_or(SubFormat::Srt);
-
-                Some(SubtitleResult {
-                    id: entry.id,
-                    file_id: file.file_id,
-                    language: entry.attributes.language.clone(),
-                    language_name: language_code_to_name(&entry.attributes.language),
-                    release: entry.attributes.release,
-                    fps: entry.attributes.fps,
-                    format,
-                    downloads: entry.attributes.download_count,
-                    from_trusted: entry.attributes.from_trusted,
-                    hearing_impaired: entry.attributes.hearing_impaired,
-                    ai_translated: entry.attributes.ai_translated,
+            .filter(|s| {
+                langs.is_empty() || langs.iter().any(|lang| {
+                    s.lang.eq_ignore_ascii_case(lang)
+                        || s.lang.starts_with(lang)
+                        || lang.starts_with(&s.lang)
                 })
             })
-            .collect()
+            .map(|s| SubtitleResult {
+                id: s.id.clone(),
+                url: s.url,
+                language: s.lang.clone(),
+                language_name: lang_code_to_name(&s.lang),
+                release: "Stremio".to_string(),
+                fps: None,
+                format: SubFormat::Srt,
+                downloads: 0,
+                from_trusted: true,
+                hearing_impaired: false,
+                ai_translated: false,
+            })
+            .collect();
+
+        Ok(results)
     }
 
-    /// Download subtitle and return WebVTT content
-    ///
-    /// Downloads the subtitle file, converts to WebVTT if needed,
-    /// and caches the result.
+    /// Download subtitle from URL and convert to WebVTT
     pub async fn download(&self, subtitle: &SubtitleResult) -> Result<String> {
         // Check cache first
         let cache_path = self.get_cache_path(subtitle);
@@ -258,34 +160,17 @@ impl SubtitleClient {
             return Ok(content);
         }
 
-        // Request download link from OpenSubtitles
-        let url = format!("{}/download", self.base_url);
-        let body = serde_json::json!({
-            "file_id": subtitle.file_id
-        });
-
-        let mut request = self.client.post(&url).json(&body);
-
-        if let Some(ref api_key) = self.api_key {
-            request = request.header("Api-Key", api_key);
-        }
-
-        let response = request.send().await?;
+        // Download from Stremio
+        let response = self.client.get(&subtitle.url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow!("Download API error: {}", response.status()));
+            return Err(anyhow!(
+                "Failed to download subtitle: {}",
+                response.status()
+            ));
         }
 
-        let download_info: DownloadResponse = response.json().await?;
-
-        // Download the actual subtitle file
-        let subtitle_response = self.client.get(&download_info.link).send().await?;
-
-        if !subtitle_response.status().is_success() {
-            return Err(anyhow!("Failed to download subtitle file"));
-        }
-
-        let srt_content = subtitle_response.text().await?;
+        let srt_content = response.text().await?;
 
         // Convert to WebVTT
         let webvtt_content = Self::srt_to_webvtt(&srt_content);
@@ -303,12 +188,6 @@ impl SubtitleClient {
     fn get_cache_path(&self, subtitle: &SubtitleResult) -> PathBuf {
         self.cache_dir
             .join(format!("{}_{}.vtt", subtitle.language, subtitle.id))
-    }
-
-    /// Get cached subtitle if exists
-    pub fn get_cached(&self, subtitle: &SubtitleResult) -> Option<String> {
-        let cache_path = self.get_cache_path(subtitle);
-        std::fs::read_to_string(&cache_path).ok()
     }
 
     /// Convert SRT content to WebVTT format
@@ -342,29 +221,52 @@ impl Default for SubtitleClient {
     }
 }
 
-/// Convert language code to full name
-fn language_code_to_name(code: &str) -> String {
-    match code {
-        "en" => "English".to_string(),
-        "es" => "Spanish".to_string(),
-        "fr" => "French".to_string(),
-        "de" => "German".to_string(),
-        "it" => "Italian".to_string(),
-        "pt" => "Portuguese".to_string(),
-        "ru" => "Russian".to_string(),
-        "ja" => "Japanese".to_string(),
-        "ko" => "Korean".to_string(),
-        "zh" => "Chinese".to_string(),
-        "ar" => "Arabic".to_string(),
-        "hi" => "Hindi".to_string(),
-        "nl" => "Dutch".to_string(),
-        "pl" => "Polish".to_string(),
-        "tr" => "Turkish".to_string(),
-        "sv" => "Swedish".to_string(),
-        "no" => "Norwegian".to_string(),
-        "da" => "Danish".to_string(),
-        "fi" => "Finnish".to_string(),
-        "el" => "Greek".to_string(),
+/// Normalize IMDB ID to have "tt" prefix
+fn normalize_imdb_id(imdb_id: &str) -> String {
+    if imdb_id.starts_with("tt") {
+        imdb_id.to_string()
+    } else {
+        format!("tt{}", imdb_id)
+    }
+}
+
+/// Convert 3-letter language code to full name
+fn lang_code_to_name(code: &str) -> String {
+    match code.to_lowercase().as_str() {
+        "eng" => "English".to_string(),
+        "spa" => "Spanish".to_string(),
+        "fre" => "French".to_string(),
+        "ger" => "German".to_string(),
+        "ita" => "Italian".to_string(),
+        "por" | "pob" => "Portuguese".to_string(),
+        "rus" => "Russian".to_string(),
+        "jpn" => "Japanese".to_string(),
+        "kor" => "Korean".to_string(),
+        "chi" | "zho" => "Chinese".to_string(),
+        "ara" => "Arabic".to_string(),
+        "hin" => "Hindi".to_string(),
+        "dut" | "nld" => "Dutch".to_string(),
+        "pol" => "Polish".to_string(),
+        "tur" => "Turkish".to_string(),
+        "swe" => "Swedish".to_string(),
+        "nor" => "Norwegian".to_string(),
+        "dan" => "Danish".to_string(),
+        "fin" => "Finnish".to_string(),
+        "gre" | "ell" => "Greek".to_string(),
+        "heb" => "Hebrew".to_string(),
+        "hun" => "Hungarian".to_string(),
+        "cze" | "ces" => "Czech".to_string(),
+        "rum" | "ron" => "Romanian".to_string(),
+        "bul" => "Bulgarian".to_string(),
+        "hrv" => "Croatian".to_string(),
+        "slv" => "Slovenian".to_string(),
+        "srp" => "Serbian".to_string(),
+        "ukr" => "Ukrainian".to_string(),
+        "vie" => "Vietnamese".to_string(),
+        "tha" => "Thai".to_string(),
+        "ind" => "Indonesian".to_string(),
+        "may" | "msa" => "Malay".to_string(),
+        "ice" | "isl" => "Icelandic".to_string(),
         _ => code.to_uppercase(),
     }
 }

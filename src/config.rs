@@ -33,20 +33,27 @@ const TMDB_KEY_POOL: &[&str] = &[
 pub struct Config {
     /// Cached TMDB API key
     pub tmdb_api_key: Option<String>,
-    /// OpenSubtitles API key
-    pub opensubtitles_api_key: Option<String>,
     /// Default Chromecast device name
     pub default_device: Option<String>,
     /// Preferred quality (4k, 1080p, 720p, 480p)
     pub preferred_quality: Option<String>,
-    /// Preferred subtitle languages
+    /// Default subtitle language (2-3 letter ISO code: en, es, fr, eng, spa, etc.)
+    pub default_subtitle_lang: Option<String>,
+    /// Preferred subtitle languages (3-letter codes: eng, spa, fre, etc.)
     pub subtitle_languages: Option<Vec<String>>,
 }
 
 impl Config {
     /// Get config file path (~/.config/streamtui/config.toml)
+    /// Uses XDG_CONFIG_HOME or ~/.config (cross-platform, predictable)
     pub fn path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("streamtui").join("config.toml"))
+        // Prefer XDG_CONFIG_HOME, then ~/.config (not ~/Library/Application Support)
+        let config_dir = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")));
+
+        config_dir.map(|p| p.join("streamtui").join("config.toml"))
     }
 
     /// Load config from file, or return default if not found
@@ -104,16 +111,6 @@ impl Config {
         TMDB_KEY_POOL[idx].to_string()
     }
 
-    /// Get OpenSubtitles API key from config or environment
-    pub fn get_opensubtitles_api_key(&self) -> Option<String> {
-        // Check environment variable first
-        if let Ok(key) = std::env::var("OPENSUBTITLES_API_KEY") {
-            return Some(key);
-        }
-        // Fall back to config
-        self.opensubtitles_api_key.clone()
-    }
-
     /// Try next key from pool (when current key fails)
     /// Returns None if all keys exhausted
     pub fn try_next_pool_key(&mut self, failed_key: &str) -> Option<String> {
@@ -133,6 +130,14 @@ impl Config {
         let _ = self.save();
         Some(key)
     }
+}
+
+/// Save settings synchronously (for immediate persistence)
+pub fn save_settings_sync(subtitle_lang: &str, device_name: Option<&str>) {
+    let mut config = Config::load();
+    config.default_subtitle_lang = Some(subtitle_lang.to_string());
+    config.default_device = device_name.map(|s| s.to_string());
+    let _ = config.save();
 }
 
 #[cfg(test)]

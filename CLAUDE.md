@@ -51,7 +51,7 @@ main.rs → cli.rs (parse) → Either:
 | `api/torrentio.rs` | Torrentio addon client for stream sources |
 | `stream/cast.rs` | `catt` CLI wrapper for Chromecast control |
 | `stream/torrent.rs` | `webtorrent-cli` wrapper for torrent streaming |
-| `stream/subtitles.rs` | OpenSubtitles API client |
+| `stream/subtitles.rs` | Stremio subtitle client (free, no API key) |
 | `ui/theme.rs` | Cyberpunk color palette (WCAG-compliant) |
 
 ### State Machine (app.rs)
@@ -76,7 +76,7 @@ Casting requires these CLI tools (not Rust crates):
 Tests live in `tests/` directory:
 - `tmdb_test.rs` - TMDB API tests
 - `torrentio_test.rs` - Torrentio API tests
-- `subtitles_test.rs` - OpenSubtitles tests
+- `subtitles_test.rs` - Stremio subtitle tests
 - `cast_test.rs` - Chromecast/catt tests
 - `torrent_test.rs` - Webtorrent tests
 - `cli_test.rs` - CLI parsing and command tests
@@ -104,4 +104,4 @@ Detailed specifications in `specs/`:
 - `search.md` - TMDB search integration
 - `torrent.md` - Webtorrent streaming
 - `cast.md` - Chromecast/catt integration
-- `subtitles.md` - OpenSubtitles integration
+- `subtitles.md` - Stremio subtitle integration

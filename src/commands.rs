@@ -284,16 +284,12 @@ pub async fn subtitles_cmd(cmd: SubtitlesCmd, output: &Output) -> ExitCode {
 // Devices Command
 // =============================================================================
 
-pub async fn devices_cmd(cmd: DevicesCmd, output: &Output) -> ExitCode {
+pub async fn devices_cmd(_cmd: DevicesCmd, output: &Output) -> ExitCode {
     output.info("Scanning for Chromecast devices...");
 
-    // Use catt scan to discover devices
-    let timeout = cmd.timeout;
-
+    // Use catt scan to discover devices (no timeout flag in catt 0.13+)
     match tokio::process::Command::new("catt")
         .arg("scan")
-        .arg("-t")
-        .arg(timeout.to_string())
         .output()
         .await
     {
@@ -486,136 +482,65 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         stream.name, stream.quality, stream.seeds
     ));
 
-    // Step 4: Start webtorrent streaming
+    // Step 4: Start webtorrent with built-in Chromecast/VLC support
     output.info("Starting torrent stream...");
 
-    // Get local IP for streaming
-    let local_ip = match local_ip_address::local_ip() {
-        Ok(ip) => ip,
-        Err(e) => return output.error(format!("Failed to get local IP: {}", e), ExitCode::Error),
-    };
-
-    let port = 8888u16;
     let file_idx = stream.file_idx.unwrap_or(0);
 
-    // Start webtorrent in background
-    let webtorrent = match tokio::process::Command::new("webtorrent")
+    // Build webtorrent command with player flag
+    let mut wt_cmd = tokio::process::Command::new("webtorrent");
+    wt_cmd
         .arg(&magnet)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--hostname")
-        .arg(local_ip.to_string())
-        .arg("--not-on-top")
-        .arg("--quiet")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                return output.error(
-                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
-                    ExitCode::Error,
-                );
-            }
-            return output.error(
-                format!("Failed to start webtorrent: {}", e),
-                ExitCode::Error,
-            );
-        }
-    };
+        .arg("-s")
+        .arg(file_idx.to_string());
 
-    // Wait a bit for webtorrent to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-    // Build stream URL
-    let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
-    output.info(format!("Stream URL: {}", stream_url));
-
-    // If --vlc flag, play locally instead of casting
     if cmd.vlc {
-        // Note: we intentionally don't kill webtorrent here - it continues streaming
-        let _ = webtorrent; // webtorrent keeps running in background
-        return play_locally(&stream_url, None, PlayerType::Vlc, output).await;
+        wt_cmd.arg("--vlc");
+    } else {
+        // Use webtorrent's built-in Chromecast support
+        wt_cmd.arg("--chromecast").arg(device_name.unwrap());
     }
 
-    // Step 5: Cast to device using catt
-    let device_name = device_name.unwrap(); // Safe: we validated above
-    let mut webtorrent = webtorrent; // Make mutable for potential kill
+    wt_cmd.arg("--not-on-top");
 
-    let mut catt_args = vec![
-        "-d".to_string(),
-        device_name.to_string(),
-        "cast".to_string(),
-        stream_url.clone(),
-    ];
+    // Start webtorrent (blocks until playback ends or user quits)
+    output.info("Connecting to peers and starting playback...");
 
-    // Add subtitle if requested
-    if let Some(sub_lang) = &cmd.subtitle {
-        // For now just note it - full subtitle integration would download and serve
-        output.info(format!(
-            "Subtitle requested: {} (not yet implemented)",
-            sub_lang
-        ));
-    }
+    let result = wt_cmd
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .await;
 
-    // Add start position if specified
-    if let Some(start) = cmd.start {
-        catt_args.push("--start".to_string());
-        catt_args.push(start.to_string());
-    }
-
-    output.info(format!("Casting to {}...", device_name));
-
-    match tokio::process::Command::new("catt")
-        .args(&catt_args)
-        .output()
-        .await
-    {
-        Ok(result) => {
-            if result.status.success() {
-                #[derive(Serialize)]
-                struct CastSuccess {
-                    status: &'static str,
-                    device: String,
-                    stream_url: String,
-                    quality: String,
-                    seeds: u32,
-                }
-
-                let response = CastSuccess {
-                    status: "casting",
-                    device: device_name.to_string(),
-                    stream_url,
-                    quality: stream.quality.to_string(),
-                    seeds: stream.seeds,
-                };
-
-                if let Err(e) = output.print(&response) {
-                    // Kill webtorrent on error
-                    let _ = webtorrent.kill().await;
-                    return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
-                }
-
-                // Note: webtorrent process continues in background
-                // In a real implementation, we'd manage this process
+    match result {
+        Ok(status) if status.success() => {
+            output.info("Playback completed");
+            ExitCode::Success
+        }
+        Ok(status) => {
+            let code = status.code().unwrap_or(1);
+            if code == 130 {
+                // User interrupted with Ctrl+C
+                output.info("Playback stopped by user");
                 ExitCode::Success
             } else {
-                let _ = webtorrent.kill().await;
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                output.error(format!("Cast failed: {}", stderr), ExitCode::CastFailed)
+                output.error(
+                    format!("webtorrent exited with code {}", code),
+                    ExitCode::CastFailed,
+                )
             }
         }
         Err(e) => {
-            let _ = webtorrent.kill().await;
             if e.kind() == std::io::ErrorKind::NotFound {
                 output.error(
-                    "catt not found. Install with: pip install catt",
+                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
                     ExitCode::Error,
                 )
             } else {
-                output.error(format!("Cast failed: {}", e), ExitCode::CastFailed)
+                output.error(
+                    format!("Failed to start webtorrent: {}", e),
+                    ExitCode::Error,
+                )
             }
         }
     }

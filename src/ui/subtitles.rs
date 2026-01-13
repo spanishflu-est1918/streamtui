@@ -424,7 +424,7 @@ mod tests {
     ) -> SubtitleResult {
         SubtitleResult {
             id: id.to_string(),
-            file_id: id.parse().unwrap_or(1),
+            url: format!("https://subs.strem.io/{}", id),
             language: lang.to_string(),
             language_name: lang_name.to_string(),
             release: release.to_string(),

@@ -316,20 +316,62 @@ impl fmt::Display for StreamSource {
 /// State of a torrent streaming session
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TorrentState {
+    /// Launching webtorrent process
     Starting,
-    Connecting,
+    /// Fetching torrent metadata from DHT/trackers
+    FetchingMetadata { peers: u32 },
+    /// Connecting to peers for download
+    Connecting { peers: u32 },
+    /// Buffering initial data for playback
+    Buffering { peers: u32, progress: u8 },
+    /// Downloading but not yet streaming
     Downloading,
+    /// Actively streaming to Chromecast
     Streaming,
+    /// Playback paused
     Paused,
+    /// Stopped by user
     Stopped,
+    /// Error occurred
     Error(String),
+}
+
+impl TorrentState {
+    /// Get peer count if available
+    pub fn peers(&self) -> Option<u32> {
+        match self {
+            TorrentState::FetchingMetadata { peers } => Some(*peers),
+            TorrentState::Connecting { peers } => Some(*peers),
+            TorrentState::Buffering { peers, .. } => Some(*peers),
+            _ => None,
+        }
+    }
+
+    /// Check if state is in connecting phase (not yet streaming)
+    pub fn is_connecting(&self) -> bool {
+        matches!(
+            self,
+            TorrentState::Starting
+                | TorrentState::FetchingMetadata { .. }
+                | TorrentState::Connecting { .. }
+                | TorrentState::Buffering { .. }
+        )
+    }
 }
 
 impl fmt::Display for TorrentState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TorrentState::Starting => write!(f, "Starting..."),
-            TorrentState::Connecting => write!(f, "Connecting to peers..."),
+            TorrentState::FetchingMetadata { peers } => {
+                write!(f, "Fetching metadata ({} peers)", peers)
+            }
+            TorrentState::Connecting { peers } => {
+                write!(f, "Connecting ({} peers)", peers)
+            }
+            TorrentState::Buffering { peers, progress } => {
+                write!(f, "Buffering {}% ({} peers)", progress, peers)
+            }
             TorrentState::Downloading => write!(f, "Downloading"),
             TorrentState::Streaming => write!(f, "Streaming"),
             TorrentState::Paused => write!(f, "Paused"),
@@ -463,7 +505,7 @@ pub struct CastDevice {
 
 impl CastDevice {
     /// Parse devices from catt scan output
-    /// Format: "Living Room TV - 192.168.1.50"
+    /// Format: "192.168.1.36 - Device Name - Google Inc. Chromecast"
     pub fn parse_catt_scan(output: &str) -> Vec<CastDevice> {
         let mut devices = Vec::new();
 
@@ -472,20 +514,27 @@ impl CastDevice {
             if line.is_empty()
                 || line.starts_with("Scanning")
                 || line.contains("No devices")
-                || line.contains("found")
             {
                 continue;
             }
 
-            // Parse "Name - IP" format
-            if let Some((name, ip_str)) = line.rsplit_once(" - ") {
-                if let Ok(addr) = ip_str.trim().parse::<IpAddr>() {
+            // Parse "IP - Name - Model" format (catt 0.13+ output)
+            let parts: Vec<&str> = line.splitn(3, " - ").collect();
+            if parts.len() >= 2 {
+                let ip_str = parts[0].trim();
+                if let Ok(addr) = ip_str.parse::<IpAddr>() {
+                    let name = parts[1].trim().to_string();
+                    let model = if parts.len() >= 3 {
+                        Some(parts[2].trim().to_string())
+                    } else {
+                        None
+                    };
                     devices.push(CastDevice {
-                        id: ip_str.trim().to_string(),
-                        name: name.trim().to_string(),
+                        id: ip_str.to_string(),
+                        name,
                         address: addr,
                         port: 8009, // Default Chromecast port
-                        model: None,
+                        model,
                     });
                 }
             }
@@ -693,11 +742,12 @@ impl fmt::Display for SubFormat {
     }
 }
 
-/// Subtitle search result from OpenSubtitles
+/// Subtitle search result from Stremio
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleResult {
     pub id: String,
-    pub file_id: u64,
+    /// Direct download URL (from Stremio)
+    pub url: String,
     pub language: String,
     pub language_name: String,
     pub release: String,
@@ -1025,14 +1075,41 @@ mod tests {
     fn test_torrent_state_display() {
         assert_eq!(TorrentState::Starting.to_string(), "Starting...");
         assert_eq!(
-            TorrentState::Connecting.to_string(),
-            "Connecting to peers..."
+            TorrentState::FetchingMetadata { peers: 0 }.to_string(),
+            "Fetching metadata (0 peers)"
+        );
+        assert_eq!(
+            TorrentState::Connecting { peers: 3 }.to_string(),
+            "Connecting (3 peers)"
+        );
+        assert_eq!(
+            TorrentState::Buffering { peers: 5, progress: 42 }.to_string(),
+            "Buffering 42% (5 peers)"
         );
         assert_eq!(TorrentState::Streaming.to_string(), "Streaming");
         assert_eq!(
             TorrentState::Error("No peers".to_string()).to_string(),
             "Error: No peers"
         );
+    }
+
+    #[test]
+    fn test_torrent_state_peers() {
+        assert_eq!(TorrentState::Starting.peers(), None);
+        assert_eq!(TorrentState::FetchingMetadata { peers: 0 }.peers(), Some(0));
+        assert_eq!(TorrentState::Connecting { peers: 5 }.peers(), Some(5));
+        assert_eq!(TorrentState::Buffering { peers: 10, progress: 50 }.peers(), Some(10));
+        assert_eq!(TorrentState::Streaming.peers(), None);
+    }
+
+    #[test]
+    fn test_torrent_state_is_connecting() {
+        assert!(TorrentState::Starting.is_connecting());
+        assert!(TorrentState::FetchingMetadata { peers: 0 }.is_connecting());
+        assert!(TorrentState::Connecting { peers: 3 }.is_connecting());
+        assert!(TorrentState::Buffering { peers: 5, progress: 20 }.is_connecting());
+        assert!(!TorrentState::Streaming.is_connecting());
+        assert!(!TorrentState::Stopped.is_connecting());
     }
 
     #[test]
@@ -1068,14 +1145,17 @@ mod tests {
 
     #[test]
     fn test_parse_catt_scan_output() {
-        let output = "Scanning for Chromecast devices...\nLiving Room TV - 192.168.1.50\nBedroom - 192.168.1.51\n";
+        // catt 0.13+ format: "IP - Name - Model"
+        let output = "Scanning Chromecasts...\n192.168.1.50 - Living Room TV - Google Inc. Chromecast Ultra\n192.168.1.51 - Bedroom - Google Inc. Chromecast\n";
         let devices = CastDevice::parse_catt_scan(output);
 
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].name, "Living Room TV");
         assert_eq!(devices[0].address.to_string(), "192.168.1.50");
+        assert_eq!(devices[0].model, Some("Google Inc. Chromecast Ultra".to_string()));
         assert_eq!(devices[1].name, "Bedroom");
         assert_eq!(devices[1].address.to_string(), "192.168.1.51");
+        assert_eq!(devices[1].model, Some("Google Inc. Chromecast".to_string()));
     }
 
     #[test]
@@ -1198,7 +1278,7 @@ mod tests {
     fn test_subtitle_trust_score() {
         let trusted = SubtitleResult {
             id: "1".to_string(),
-            file_id: 1,
+            url: "https://subs.strem.io/1".to_string(),
             language: "en".to_string(),
             language_name: "English".to_string(),
             release: "Test".to_string(),

@@ -1706,6 +1706,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures",
+ "libc",
  "local-ip-address",
  "mockito",
  "ratatui",

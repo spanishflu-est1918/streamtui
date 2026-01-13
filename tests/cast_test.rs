@@ -18,8 +18,9 @@ use streamtui::stream::CastManager;
 /// Test parsing catt scan output with multiple devices
 #[test]
 fn test_discover_parses_catt_output() {
+    // catt 0.13+ format: "IP - Name - Model"
     let output =
-        "Scanning for Chromecast devices...\nLiving Room TV - 192.168.1.50\nBedroom - 192.168.1.51";
+        "Scanning Chromecasts...\n192.168.1.50 - Living Room TV - Google Inc. Chromecast Ultra\n192.168.1.51 - Bedroom - Google Inc. Chromecast";
 
     let devices = CastDevice::parse_catt_scan(output);
 
@@ -32,6 +33,7 @@ fn test_discover_parses_catt_output() {
         "192.168.1.50".parse::<IpAddr>().unwrap()
     );
     assert_eq!(devices[0].port, 8009); // Default Chromecast port
+    assert_eq!(devices[0].model, Some("Google Inc. Chromecast Ultra".to_string()));
 
     // Second device
     assert_eq!(devices[1].name, "Bedroom");
@@ -72,8 +74,9 @@ fn test_discover_handles_no_devices() {
 /// Test parsing devices with special characters in names
 #[test]
 fn test_discover_handles_special_names() {
+    // catt 0.13+ format: "IP - Name - Model"
     let output =
-        "John's TV - 192.168.1.50\nLiving Room (Main) - 192.168.1.51\nTV-2023 - 10.0.0.100";
+        "192.168.1.50 - John's TV - Google Inc. Chromecast\n192.168.1.51 - Living Room (Main) - Google Inc. Chromecast Ultra\n10.0.0.100 - TV-2023 - Google Inc. Chromecast";
 
     let devices = CastDevice::parse_catt_scan(output);
 

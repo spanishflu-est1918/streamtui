@@ -3,6 +3,7 @@
 //! Manages the application state machine, navigation stack,
 //! and coordinates between UI and backend services.
 
+use crate::config::save_settings_sync;
 use crate::models::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc;
@@ -22,10 +23,41 @@ pub enum AppCommand {
     FetchMovieDetail(u64),
     /// Fetch TV detail
     FetchTvDetail(u64),
+    /// Fetch episodes for a TV season
+    FetchEpisodes { tv_id: u64, season: u8 },
     /// Fetch streams for content
     FetchStreams { imdb_id: String, season: Option<u8>, episode: Option<u8> },
     /// Fetch subtitles
     FetchSubtitles { imdb_id: String, lang: String },
+    /// Discover Chromecast devices
+    DiscoverDevices,
+    /// Start playback (webtorrent + cast)
+    StartPlayback {
+        magnet: String,
+        title: String,
+        device: String,
+        subtitle_url: Option<String>,
+    },
+    /// Stop playback
+    StopPlayback,
+    /// Restart playback with subtitles at position
+    RestartWithSubtitles {
+        magnet: String,
+        title: String,
+        device: String,
+        subtitle_url: String,
+        seek_seconds: u32,
+    },
+    /// Playback control (pause, volume, seek)
+    PlaybackControl {
+        action: String,
+        device: String,
+    },
+    /// Save settings to config file
+    SaveSettings {
+        subtitle_lang: String,
+        device_name: Option<String>,
+    },
 }
 
 /// Results sent from async tasks back to UI
@@ -39,10 +71,18 @@ pub enum AppMessage {
     MovieDetailLoaded(MovieDetail),
     /// TV detail loaded
     TvDetailLoaded(TvDetail),
+    /// Episodes loaded for a season
+    EpisodesLoaded { season: u8, episodes: Vec<Episode> },
     /// Streams loaded
     StreamsLoaded(Vec<StreamSource>),
     /// Subtitles loaded
     SubtitlesLoaded(Vec<SubtitleResult>),
+    /// Chromecast devices discovered
+    DevicesLoaded(Vec<CastDevice>),
+    /// Playback started with stream URL
+    PlaybackStarted { stream_url: String },
+    /// Playback stopped
+    PlaybackStopped,
     /// Error occurred
     Error(String),
 }
@@ -330,6 +370,14 @@ impl SearchState {
     }
 }
 
+/// Focus state for TV detail view (which panel is focused)
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum TvFocus {
+    #[default]
+    Seasons,
+    Episodes,
+}
+
 /// Detail view state (movie or TV show)
 #[derive(Debug, Clone)]
 pub enum DetailState {
@@ -345,6 +393,7 @@ pub enum DetailState {
         episode_list: ListState,
         episodes: Vec<Episode>,
         selected_season: u8,
+        focus: TvFocus,
         loading: LoadingState,
     },
 }
@@ -365,6 +414,7 @@ impl DetailState {
             episode_list: ListState::new(0),
             episodes: Vec::new(),
             selected_season: 1,
+            focus: TvFocus::Seasons,
             loading: LoadingState::Idle,
         }
     }
@@ -420,6 +470,48 @@ impl SourcesState {
     }
 }
 
+/// Subtitle language filter options
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum SubLangFilter {
+    #[default]
+    EngSpa,  // English + Spanish (default)
+    English, // English only
+    Spanish, // Spanish only
+    All,     // All languages
+}
+
+impl SubLangFilter {
+    /// Cycle to next filter
+    pub fn next(self) -> Self {
+        match self {
+            Self::EngSpa => Self::English,
+            Self::English => Self::Spanish,
+            Self::Spanish => Self::All,
+            Self::All => Self::EngSpa,
+        }
+    }
+
+    /// Get the language code(s) for API call
+    pub fn lang_code(&self) -> &'static str {
+        match self {
+            Self::EngSpa => "eng,spa",
+            Self::English => "eng",
+            Self::Spanish => "spa",
+            Self::All => "",
+        }
+    }
+
+    /// Display name
+    pub fn display(&self) -> &'static str {
+        match self {
+            Self::EngSpa => "🇬🇧+🇪🇸",
+            Self::English => "🇬🇧 English",
+            Self::Spanish => "🇪🇸 Spanish",
+            Self::All => "🌍 All",
+        }
+    }
+}
+
 /// Subtitles view state
 #[derive(Debug, Clone, Default)]
 pub struct SubtitlesState {
@@ -431,6 +523,8 @@ pub struct SubtitlesState {
     pub loading: LoadingState,
     /// Selected subtitle (for playback)
     pub selected: Option<SubtitleResult>,
+    /// Language filter
+    pub lang_filter: SubLangFilter,
 }
 
 impl SubtitlesState {
@@ -458,6 +552,10 @@ pub struct PlayingState {
     pub title: String,
     /// Selected subtitle file
     pub subtitle: Option<SubtitleFile>,
+    /// Current magnet URL (for restart with subtitles)
+    pub magnet: Option<String>,
+    /// Pending subtitle change (triggers restart on return to Playing)
+    pub pending_subtitle_url: Option<String>,
 }
 
 // =============================================================================
@@ -490,6 +588,22 @@ pub struct App {
     pub cast_devices: Vec<CastDevice>,
     /// Selected cast device index
     pub selected_device: Option<usize>,
+    /// Show device selection modal
+    pub show_device_modal: bool,
+    /// Device modal selection index (separate from selected_device until confirmed)
+    pub device_modal_index: usize,
+
+    // Settings
+    /// Default subtitle language (ISO 639-1 code, e.g., "en", "es", "fr")
+    pub default_subtitle_lang: String,
+    /// Default device name (from config, used to auto-select on discovery)
+    pub default_device_name: Option<String>,
+    /// Show settings modal
+    pub show_settings_modal: bool,
+    /// Settings modal field index (0=language, 1=device)
+    pub settings_field_index: usize,
+    /// Temporary language input while editing
+    pub settings_lang_input: String,
 
     // Async communication
     /// Channel to send commands to async task spawner
@@ -522,6 +636,14 @@ impl App {
 
             cast_devices: Vec::new(),
             selected_device: None,
+            show_device_modal: false,
+            device_modal_index: 0,
+
+            default_subtitle_lang: "eng,spa".to_string(), // English + Spanish by default
+            default_device_name: None,
+            show_settings_modal: false,
+            settings_field_index: 0,
+            settings_lang_input: String::new(),
 
             cmd_tx,
         }
@@ -548,6 +670,14 @@ impl App {
 
             cast_devices: Vec::new(),
             selected_device: None,
+            show_device_modal: false,
+            device_modal_index: 0,
+
+            default_subtitle_lang: "eng,spa".to_string(), // English + Spanish by default
+            default_device_name: None,
+            show_settings_modal: false,
+            settings_field_index: 0,
+            settings_lang_input: String::new(),
 
             cmd_tx,
         };
@@ -576,14 +706,55 @@ impl App {
                 self.navigate(AppState::Detail);
             }
             AppMessage::TvDetailLoaded(detail) => {
+                // Store the TV ID for episode fetching
+                let tv_id = detail.id;
                 self.detail = Some(DetailState::tv(detail));
                 self.navigate(AppState::Detail);
+                // Auto-fetch first season's episodes
+                self.send_command(AppCommand::FetchEpisodes { tv_id, season: 1 });
+            }
+            AppMessage::EpisodesLoaded { season, episodes } => {
+                // Update the TV detail state with loaded episodes
+                if let Some(DetailState::Tv { episodes: eps, episode_list, selected_season, .. }) = &mut self.detail {
+                    *eps = episodes;
+                    episode_list.set_len(eps.len());
+                    *selected_season = season;
+                }
             }
             AppMessage::StreamsLoaded(streams) => {
                 self.sources.set_sources(streams);
             }
             AppMessage::SubtitlesLoaded(subs) => {
                 self.subtitles.set_subtitles(subs);
+            }
+            AppMessage::DevicesLoaded(devices) => {
+                self.cast_devices = devices;
+                // Always try to match default device when devices are loaded
+                if !self.cast_devices.is_empty() {
+                    if let Some(ref default_name) = self.default_device_name {
+                        // Try to find and select the saved default device
+                        if let Some(idx) = self.cast_devices.iter().position(|d| &d.name == default_name) {
+                            self.selected_device = Some(idx);
+                        } else if self.selected_device.is_none() {
+                            // Fallback to first device if default not found
+                            self.selected_device = Some(0);
+                        }
+                    } else if self.selected_device.is_none() {
+                        // No default configured, select first
+                        self.selected_device = Some(0);
+                    }
+                }
+            }
+            AppMessage::PlaybackStarted { stream_url } => {
+                // Update torrent session with stream URL
+                if let Some(ref mut session) = self.playing.torrent {
+                    session.stream_url = Some(stream_url);
+                    session.state = TorrentState::Streaming;
+                }
+            }
+            AppMessage::PlaybackStopped => {
+                self.playing = PlayingState::default();
+                self.back();
             }
             AppMessage::Error(msg) => {
                 self.set_error(msg);
@@ -616,11 +787,39 @@ impl App {
         }
 
         if let Some(prev) = self.nav_stack.pop() {
-            self.state = prev;
+            self.state = prev.clone();
+
+            // If returning to Playing with a pending subtitle, trigger restart
+            if prev == AppState::Playing {
+                if let Some(subtitle_url) = self.playing.pending_subtitle_url.take() {
+                    self.trigger_subtitle_restart(subtitle_url);
+                }
+            }
+
             true
         } else {
             false
         }
+    }
+
+    /// Trigger playback restart with new subtitle at current position
+    fn trigger_subtitle_restart(&mut self, subtitle_url: String) {
+        let Some(magnet) = self.playing.magnet.clone() else { return };
+        let Some(device) = self.playing.device.clone() else { return };
+
+        // Get current position (default to 0 if unknown)
+        let seek_seconds = self.playing.playback
+            .as_ref()
+            .map(|p| p.position.as_secs() as u32)
+            .unwrap_or(0);
+
+        self.send_command(AppCommand::RestartWithSubtitles {
+            magnet,
+            title: self.playing.title.clone(),
+            device: device.name,
+            subtitle_url,
+            seek_seconds,
+        });
     }
 
     /// Quit the application
@@ -669,11 +868,130 @@ impl App {
             return true;
         }
 
+        // Handle device modal if open
+        if self.show_device_modal {
+            return self.handle_device_modal_key(key);
+        }
+
+        // Handle settings modal if open
+        if self.show_settings_modal {
+            return self.handle_settings_modal_key(key);
+        }
+
         // Route to appropriate handler based on mode and state
         if self.input_mode == InputMode::Editing {
             self.handle_editing_key(key)
         } else {
             self.handle_normal_key(key)
+        }
+    }
+
+    /// Handle keys when device selection modal is open
+    fn handle_device_modal_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('d') => {
+                self.show_device_modal = false;
+                true
+            }
+            KeyCode::Enter => {
+                // Confirm selection and save as default
+                if !self.cast_devices.is_empty() {
+                    self.selected_device = Some(self.device_modal_index);
+
+                    // Save as default device
+                    let device_name = self.cast_devices
+                        .get(self.device_modal_index)
+                        .map(|d| d.name.clone());
+                    self.default_device_name = device_name.clone();
+
+                    // Persist to config synchronously (don't rely on async)
+                    save_settings_sync(&self.default_subtitle_lang, device_name.as_deref());
+                }
+                self.show_device_modal = false;
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if !self.cast_devices.is_empty() {
+                    if self.device_modal_index > 0 {
+                        self.device_modal_index -= 1;
+                    } else {
+                        self.device_modal_index = self.cast_devices.len() - 1;
+                    }
+                }
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.cast_devices.is_empty() {
+                    self.device_modal_index = (self.device_modal_index + 1) % self.cast_devices.len();
+                }
+                true
+            }
+            KeyCode::Char('r') => {
+                // Refresh devices
+                self.send_command(AppCommand::DiscoverDevices);
+                true
+            }
+            _ => true, // Consume all other keys when modal is open
+        }
+    }
+
+    /// Handle keys when settings modal is open
+    fn handle_settings_modal_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('o') => {
+                // Close without saving changes to temp input
+                self.show_settings_modal = false;
+                true
+            }
+            KeyCode::Enter => {
+                // Confirm changes - save language if valid
+                let lang = self.settings_lang_input.trim().to_lowercase();
+                if lang.len() >= 2 && lang.len() <= 3 {
+                    self.default_subtitle_lang = lang.clone();
+                }
+
+                // Get current device name for saving
+                let device_name = self
+                    .selected_device
+                    .and_then(|i| self.cast_devices.get(i))
+                    .map(|d| d.name.clone());
+
+                // Update local cache
+                self.default_device_name = device_name.clone();
+
+                // Persist to config synchronously
+                save_settings_sync(&self.default_subtitle_lang, device_name.as_deref());
+
+                self.show_settings_modal = false;
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.settings_field_index > 0 {
+                    self.settings_field_index -= 1;
+                }
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                // Only 2 fields: language (0) and device info (1)
+                if self.settings_field_index < 1 {
+                    self.settings_field_index += 1;
+                }
+                true
+            }
+            KeyCode::Char(c) => {
+                // Only language field (index 0) accepts text input
+                if self.settings_field_index == 0 && self.settings_lang_input.len() < 3 {
+                    self.settings_lang_input.push(c);
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                if self.settings_field_index == 0 {
+                    self.settings_lang_input.pop();
+                }
+                true
+            }
+            _ => true,
         }
     }
 
@@ -740,6 +1058,20 @@ impl App {
             // 's' focuses search except in Playing state where it stops playback
             KeyCode::Char('s') if self.state != AppState::Playing => {
                 self.focus_search();
+                return true;
+            }
+            // 'd' opens device selection modal globally
+            KeyCode::Char('d') => {
+                self.show_device_modal = true;
+                self.device_modal_index = self.selected_device.unwrap_or(0);
+                self.send_command(AppCommand::DiscoverDevices);
+                return true;
+            }
+            // 'o' opens settings modal
+            KeyCode::Char('o') => {
+                self.show_settings_modal = true;
+                self.settings_field_index = 0;
+                self.settings_lang_input = self.default_subtitle_lang.clone();
                 return true;
             }
             KeyCode::Esc => {
@@ -836,35 +1168,59 @@ impl App {
     fn handle_detail_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                // Navigate within detail view (e.g., seasons/episodes)
-                if let Some(DetailState::Tv { season_list, .. }) = &mut self.detail {
-                    season_list.up();
+                if let Some(DetailState::Tv { season_list, episode_list, focus, .. }) = &mut self.detail {
+                    match focus {
+                        TvFocus::Seasons => season_list.up(),
+                        TvFocus::Episodes => episode_list.up(),
+                    }
                 }
                 true
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(DetailState::Tv { season_list, .. }) = &mut self.detail {
-                    season_list.down();
+                if let Some(DetailState::Tv { season_list, episode_list, focus, .. }) = &mut self.detail {
+                    match focus {
+                        TvFocus::Seasons => season_list.down(),
+                        TvFocus::Episodes => episode_list.down(),
+                    }
                 }
                 true
             }
-            KeyCode::Enter | KeyCode::Char('c') => {
-                // Fetch sources and navigate
-                if let Some(detail) = &self.detail {
-                    let (imdb_id, season, episode) = match detail {
-                        DetailState::Movie { detail, .. } => {
-                            (detail.imdb_id.clone(), None, None)
-                        }
-                        DetailState::Tv { detail, selected_season, episode_list, episodes, .. } => {
-                            // For TV, we need season and episode
-                            let ep = episodes.get(episode_list.selected).map(|e| e.episode);
-                            (detail.imdb_id.clone(), Some(*selected_season), ep)
-                        }
+            KeyCode::Tab | KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+                // Switch between seasons/episodes panel
+                if let Some(DetailState::Tv { focus, .. }) = &mut self.detail {
+                    *focus = match focus {
+                        TvFocus::Seasons => TvFocus::Episodes,
+                        TvFocus::Episodes => TvFocus::Seasons,
                     };
-                    self.sources.loading = LoadingState::Loading(Some("Fetching streams...".into()));
-                    self.send_command(AppCommand::FetchStreams { imdb_id, season, episode });
-                    self.navigate(AppState::Sources);
                 }
+                true
+            }
+            KeyCode::Enter => {
+                // For TV: if on seasons panel, load episodes for selected season
+                // If on episodes panel (or movie), go to sources
+                if let Some(DetailState::Tv { detail, season_list, focus, .. }) = &self.detail {
+                    if *focus == TvFocus::Seasons {
+                        // Load episodes for selected season
+                        let tv_id = detail.id;
+                        let selected_season_idx = season_list.selected;
+                        if let Some(season) = detail.seasons.get(selected_season_idx) {
+                            let season_num = season.season_number;
+                            self.send_command(AppCommand::FetchEpisodes { tv_id, season: season_num });
+                            // Switch focus to episodes
+                            if let Some(DetailState::Tv { focus, .. }) = &mut self.detail {
+                                *focus = TvFocus::Episodes;
+                            }
+                        }
+                        return true;
+                    }
+                }
+                // Fetch sources (movie or TV episode)
+                self.fetch_sources_for_current();
+                true
+            }
+            KeyCode::Char('c') => {
+                // Always go to sources (skip season selection)
+                self.fetch_sources_for_current();
                 true
             }
             KeyCode::Char('u') => {
@@ -875,16 +1231,34 @@ impl App {
                         DetailState::Tv { detail, .. } => detail.imdb_id.clone(),
                     };
                     self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
-                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: "en".into() });
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: self.subtitles.lang_filter.lang_code().to_string() });
                     self.navigate(AppState::Subtitles);
                 }
                 true
             }
-            KeyCode::Tab => {
-                // Switch between seasons/episodes panel
-                true
-            }
             _ => false,
+        }
+    }
+
+    /// Fetch sources for current selection (movie or TV episode)
+    fn fetch_sources_for_current(&mut self) {
+        if let Some(detail) = &self.detail {
+            let (imdb_id, season, episode, title) = match detail {
+                DetailState::Movie { detail, .. } => {
+                    (detail.imdb_id.clone(), None, None, detail.title.clone())
+                }
+                DetailState::Tv { detail, selected_season, episode_list, episodes, .. } => {
+                    let ep = episodes.get(episode_list.selected);
+                    let ep_num = ep.map(|e| e.episode);
+                    let title = ep.map(|e| format!("{} S{}E{}", detail.name, selected_season, e.episode))
+                        .unwrap_or_else(|| detail.name.clone());
+                    (detail.imdb_id.clone(), Some(*selected_season), ep_num, title)
+                }
+            };
+            self.sources.title = title;
+            self.sources.loading = LoadingState::Loading(Some("Fetching streams...".into()));
+            self.send_command(AppCommand::FetchStreams { imdb_id, season, episode });
+            self.navigate(AppState::Sources);
         }
     }
 
@@ -900,7 +1274,7 @@ impl App {
             }
             KeyCode::Enter | KeyCode::Char('c') => {
                 // Start streaming selected source
-                self.navigate(AppState::Playing);
+                self.start_playback();
                 true
             }
             KeyCode::Char(c @ '1'..='9') => {
@@ -912,12 +1286,87 @@ impl App {
                 true
             }
             KeyCode::Char('u') => {
-                // Go to subtitles first
+                // Go to subtitles and trigger fetch
                 self.navigate(AppState::Subtitles);
+                // Auto-fetch subtitles if we have an IMDB ID
+                if let Some(imdb_id) = self.get_imdb_id() {
+                    self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang: self.subtitles.lang_filter.lang_code().to_string() });
+                }
+                true
+            }
+            KeyCode::Tab => {
+                // Cycle to next device
+                if !self.cast_devices.is_empty() {
+                    let current = self.selected_device.unwrap_or(0);
+                    self.selected_device = Some((current + 1) % self.cast_devices.len());
+                }
+                true
+            }
+            KeyCode::BackTab => {
+                // Cycle to previous device
+                if !self.cast_devices.is_empty() {
+                    let current = self.selected_device.unwrap_or(0);
+                    let len = self.cast_devices.len();
+                    self.selected_device = Some((current + len - 1) % len);
+                }
                 true
             }
             _ => false,
         }
+    }
+
+    /// Start playback of selected source on selected device
+    fn start_playback(&mut self) {
+        // Check we have a device selected
+        let device = match self.selected_device {
+            Some(idx) if idx < self.cast_devices.len() => &self.cast_devices[idx],
+            _ => {
+                self.set_error("No Chromecast device selected. Press 'd' to discover devices.");
+                return;
+            }
+        };
+
+        // Check we have a source selected
+        let source = match self.sources.selected_source() {
+            Some(s) => s.clone(),
+            None => {
+                self.set_error("No stream source selected.");
+                return;
+            }
+        };
+
+        // Generate magnet link
+        let magnet = source.to_magnet(&self.sources.title);
+
+        // Get subtitle URL if selected
+        let subtitle_url = self.subtitles.selected.as_ref().map(|s| s.url.clone());
+
+        // Set up playing state
+        self.playing.title = self.sources.title.clone();
+        self.playing.device = Some(device.clone());
+        self.playing.torrent = Some(TorrentSession::new(magnet.clone(), source.file_idx));
+        self.playing.magnet = Some(magnet.clone()); // Store for subtitle restart
+        self.playing.pending_subtitle_url = None;
+
+        // Send command to start playback
+        self.send_command(AppCommand::StartPlayback {
+            magnet,
+            title: self.sources.title.clone(),
+            device: device.name.clone(),
+            subtitle_url,
+        });
+
+        // Navigate to Playing state
+        self.navigate(AppState::Playing);
+    }
+
+    /// Get IMDB ID from current detail
+    fn get_imdb_id(&self) -> Option<String> {
+        self.detail.as_ref().map(|d| match d {
+            DetailState::Movie { detail, .. } => detail.imdb_id.clone(),
+            DetailState::Tv { detail, .. } => detail.imdb_id.clone(),
+        })
     }
 
     fn handle_subtitles_key(&mut self, key: KeyEvent) -> bool {
@@ -930,10 +1379,24 @@ impl App {
                 self.subtitles.list.down();
                 true
             }
+            KeyCode::Tab => {
+                // Toggle language filter and refetch
+                self.subtitles.lang_filter = self.subtitles.lang_filter.next();
+                if let Some(imdb_id) = self.get_imdb_id() {
+                    self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
+                    let lang = self.subtitles.lang_filter.lang_code().to_string();
+                    self.send_command(AppCommand::FetchSubtitles { imdb_id, lang });
+                }
+                true
+            }
             KeyCode::Enter => {
-                // Select subtitle and continue
-                if let Some(sub) = self.subtitles.selected_subtitle() {
-                    self.subtitles.selected = Some(sub.clone());
+                // Select subtitle (clone first to avoid borrow issues)
+                if let Some(sub) = self.subtitles.selected_subtitle().cloned() {
+                    // If coming from Playing state, set pending subtitle for restart
+                    if self.nav_stack.last() == Some(&AppState::Playing) {
+                        self.playing.pending_subtitle_url = Some(sub.url.clone());
+                    }
+                    self.subtitles.selected = Some(sub);
                 }
                 self.back();
                 true
@@ -949,9 +1412,20 @@ impl App {
     }
 
     fn handle_playing_key(&mut self, key: KeyEvent) -> bool {
+        // Get device name for commands
+        let device_name = match &self.playing.device {
+            Some(d) => d.name.clone(),
+            None => return false,
+        };
+
         match key.code {
             KeyCode::Char(' ') => {
-                // Toggle pause
+                // Toggle pause - send command to catt
+                self.send_command(AppCommand::PlaybackControl {
+                    action: "play_toggle".into(),
+                    device: device_name,
+                });
+                // Also update local state
                 if let Some(ref mut playback) = self.playing.playback {
                     playback.state = match playback.state {
                         CastState::Playing => CastState::Paused,
@@ -963,21 +1437,35 @@ impl App {
             }
             KeyCode::Char('s') => {
                 // Stop playback
+                self.send_command(AppCommand::StopPlayback);
+                // Update local state
                 if let Some(ref mut playback) = self.playing.playback {
                     playback.state = CastState::Stopped;
                 }
                 true
             }
             KeyCode::Left => {
-                // Seek backward
+                // Seek backward 30 seconds
+                self.send_command(AppCommand::PlaybackControl {
+                    action: "rewind".into(),
+                    device: device_name,
+                });
                 true
             }
             KeyCode::Right => {
-                // Seek forward
+                // Seek forward 30 seconds
+                self.send_command(AppCommand::PlaybackControl {
+                    action: "ffwd".into(),
+                    device: device_name,
+                });
                 true
             }
             KeyCode::Up => {
                 // Volume up
+                self.send_command(AppCommand::PlaybackControl {
+                    action: "volumeup".into(),
+                    device: device_name,
+                });
                 if let Some(ref mut playback) = self.playing.playback {
                     playback.volume = (playback.volume + 0.1).min(1.0);
                 }
@@ -985,8 +1473,24 @@ impl App {
             }
             KeyCode::Down => {
                 // Volume down
+                self.send_command(AppCommand::PlaybackControl {
+                    action: "volumedown".into(),
+                    device: device_name,
+                });
                 if let Some(ref mut playback) = self.playing.playback {
                     playback.volume = (playback.volume - 0.1).max(0.0);
+                }
+                true
+            }
+            KeyCode::Char('u') => {
+                // Open subtitle selector
+                if let Some(imdb_id) = self.get_imdb_id() {
+                    self.subtitles.loading = LoadingState::Loading(Some("Fetching subtitles...".into()));
+                    self.send_command(AppCommand::FetchSubtitles {
+                        imdb_id,
+                        lang: self.subtitles.lang_filter.lang_code().to_string()
+                    });
+                    self.navigate(AppState::Subtitles);
                 }
                 true
             }
@@ -1268,6 +1772,14 @@ mod tests {
     fn test_playing_pause_toggle() {
         let mut app = App::new();
         app.state = AppState::Playing;
+        // Must have a device for playing controls to work
+        app.playing.device = Some(CastDevice {
+            id: "test".into(),
+            name: "Test TV".into(),
+            address: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 50)),
+            port: 8009,
+            model: None,
+        });
         app.playing.playback = Some(PlaybackStatus {
             state: CastState::Playing,
             position: std::time::Duration::from_secs(100),
@@ -1294,6 +1806,14 @@ mod tests {
     fn test_playing_volume() {
         let mut app = App::new();
         app.state = AppState::Playing;
+        // Must have a device for playing controls to work
+        app.playing.device = Some(CastDevice {
+            id: "test".into(),
+            name: "Test TV".into(),
+            address: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 50)),
+            port: 8009,
+            model: None,
+        });
         app.playing.playback = Some(PlaybackStatus {
             state: CastState::Playing,
             position: std::time::Duration::ZERO,

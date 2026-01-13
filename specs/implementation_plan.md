@@ -77,13 +77,13 @@ For each component: **Write tests → Make them pass → Refactor**
 
 ### 12. [x] Subtitle client tests (tests/subtitles_test.rs)
 - Write tests from specs/subtitles.md
-- Mock OpenSubtitles API
+- Mock Stremio subtitle API
 - 25 tests: all pass
-- Tests: search parsing, language filtering, caching, SRT→WebVTT conversion, URL generation, cast command with subtitles, empty results, rate limiting, language priority/auto-select
+- Tests: search parsing, language filtering, caching, SRT→WebVTT conversion, URL generation, cast command with subtitles, empty results, language priority/auto-select
 
 ### 13. [x] Subtitle client implementation (src/stream/subtitles.rs)
 - Implement SubtitleClient
-- OpenSubtitles API integration
+- Stremio subtitle API integration (free, no API key)
 - SRT to WebVTT conversion
 - Caching
 - Make tests pass
