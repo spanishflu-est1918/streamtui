@@ -728,7 +728,16 @@ impl App {
                 self.subtitles.set_subtitles(subs);
             }
             AppMessage::DevicesLoaded(devices) => {
-                self.cast_devices = devices;
+                // Start with VLC as first option (always available for local playback)
+                let mut all_devices = vec![CastDevice {
+                    id: "vlc-local".to_string(),
+                    name: "VLC (Local)".to_string(),
+                    address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                    port: 0,
+                    model: Some("Local Playback".to_string()),
+                }];
+                all_devices.extend(devices);
+                self.cast_devices = all_devices;
                 // Always try to match default device when devices are loaded
                 if !self.cast_devices.is_empty() {
                     if let Some(ref default_name) = self.default_device_name {

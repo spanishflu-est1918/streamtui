@@ -21,7 +21,14 @@ impl PlayerType {
     /// Get the command name for this player
     pub fn command(&self) -> &'static str {
         match self {
-            PlayerType::Vlc => "vlc",
+            PlayerType::Vlc => {
+                // On macOS, VLC is an app bundle - check for it
+                #[cfg(target_os = "macos")]
+                if std::path::Path::new("/Applications/VLC.app").exists() {
+                    return "/Applications/VLC.app/Contents/MacOS/VLC";
+                }
+                "vlc"
+            }
             PlayerType::Mpv => "mpv",
         }
     }
@@ -80,8 +87,16 @@ impl LocalPlayer {
 
     /// Check if the player is available on the system
     pub async fn is_available(&self) -> bool {
+        let cmd = self.player_type.command();
+
+        // If it's a full path (macOS app bundle), check if it exists
+        if cmd.starts_with('/') {
+            return std::path::Path::new(cmd).exists();
+        }
+
+        // Otherwise use 'which' to find in PATH
         Command::new("which")
-            .arg(self.player_type.command())
+            .arg(cmd)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()

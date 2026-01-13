@@ -344,6 +344,33 @@ fn to_player_type(choice: PlayerChoice) -> PlayerType {
 }
 
 /// Play a stream URL locally in VLC/mpv
+/// Wait for a stream URL to become available (webtorrent needs time to connect)
+async fn wait_for_stream(url: &str, timeout_secs: u64, output: &Output) -> bool {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+
+    output.info("Waiting for stream to be ready...");
+
+    while start.elapsed() < timeout {
+        match client.head(url).send().await {
+            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 206 => {
+                output.info("Stream ready!");
+                return true;
+            }
+            _ => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+
+    false
+}
+
 async fn play_locally(
     stream_url: &str,
     subtitle_path: Option<&std::path::Path>,
@@ -576,11 +603,71 @@ pub async fn cast_magnet_cmd(
         );
     }
 
+    // If --vlc flag, use webtorrent's built-in VLC support
     if cmd.vlc {
         output.info("Playing magnet in VLC...");
-    } else {
-        output.info(format!("Casting magnet to {}...", device_name.unwrap()));
+
+        let file_idx = cmd.file_idx.unwrap_or(0);
+
+        // Build webtorrent command with --vlc flag
+        let mut wt_args = vec![
+            cmd.magnet.clone(),
+            "--vlc".to_string(),
+            "--not-on-top".to_string(),
+            "-s".to_string(), file_idx.to_string(), // Select file index
+        ];
+
+        // Add subtitle file if provided
+        if let Some(sub_file) = &cmd.subtitle_file {
+            if !sub_file.exists() {
+                return output.error(
+                    format!("Subtitle file not found: {}", sub_file.display()),
+                    ExitCode::InvalidArgs,
+                );
+            }
+            // VLC subtitle args passed through webtorrent
+            wt_args.push("--player-args".to_string());
+            wt_args.push(format!("--sub-file={}", sub_file.display()));
+        }
+
+        // Start webtorrent with --vlc (it handles opening VLC when ready)
+        match tokio::process::Command::new("webtorrent")
+            .args(&wt_args)
+            .spawn()
+        {
+            Ok(_child) => {
+                #[derive(Serialize)]
+                struct VlcSuccess {
+                    status: &'static str,
+                    player: &'static str,
+                    magnet: String,
+                }
+                let response = VlcSuccess {
+                    status: "playing",
+                    player: "VLC",
+                    magnet: cmd.magnet,
+                };
+                if let Err(e) = output.print(&response) {
+                    return output.error(format!("Failed to print: {}", e), ExitCode::Error);
+                }
+                return ExitCode::Success;
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    return output.error(
+                        "webtorrent not found. Install with: npm install -g webtorrent-cli",
+                        ExitCode::Error,
+                    );
+                }
+                return output.error(
+                    format!("Failed to start webtorrent: {}", e),
+                    ExitCode::Error,
+                );
+            }
+        }
     }
+
+    output.info(format!("Casting magnet to {}...", device_name.unwrap()));
 
     // Get local IP for streaming
     let local_ip = match local_ip_address::local_ip() {
@@ -591,7 +678,7 @@ pub async fn cast_magnet_cmd(
     let port = 8888u16;
     let file_idx = cmd.file_idx.unwrap_or(0);
 
-    // Start webtorrent in background
+    // Start webtorrent in background (for Chromecast)
     let webtorrent = match tokio::process::Command::new("webtorrent")
         .arg(&cmd.magnet)
         .arg("--port")
@@ -621,30 +708,13 @@ pub async fn cast_magnet_cmd(
 
     output.info("Starting torrent stream...");
 
-    // Wait for webtorrent to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
     // Build stream URL
     let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
     output.info(format!("Stream URL: {}", stream_url));
 
-    // If --vlc flag, play locally instead of casting
-    if cmd.vlc {
-        let subtitle_path = cmd.subtitle_file.as_deref();
-
-        // Validate subtitle file if provided
-        if let Some(sub_file) = subtitle_path {
-            if !sub_file.exists() {
-                return output.error(
-                    format!("Subtitle file not found: {}", sub_file.display()),
-                    ExitCode::InvalidArgs,
-                );
-            }
-        }
-
-        // Note: webtorrent keeps running in background
-        let _ = webtorrent;
-        return play_locally(&stream_url, subtitle_path, PlayerType::Vlc, output).await;
+    // Wait for stream to be ready (webtorrent needs to connect to peers)
+    if !wait_for_stream(&stream_url, 60, output).await {
+        output.info("Stream not ready yet, continuing anyway...");
     }
 
     // Cast to device using catt
@@ -809,12 +879,14 @@ pub async fn play_local_cmd(cmd: PlayLocalCmd, output: &Output) -> ExitCode {
 
     output.info("Starting torrent stream...");
 
-    // Wait for webtorrent to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
     // Build stream URL
     let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
     output.info(format!("Stream URL: {}", stream_url));
+
+    // Wait for stream to be ready (webtorrent needs to connect to peers)
+    if !wait_for_stream(&stream_url, 60, output).await {
+        output.info("Stream not ready yet, but opening player anyway...");
+    }
 
     // Validate subtitle file if provided
     let subtitle_path = cmd.subtitle_file.as_deref();

@@ -1688,13 +1688,22 @@ async fn start_playback(
         .map_err(|e| anyhow::anyhow!("Failed to get executable path: {}", e))?;
     let exe_path = exe.to_string_lossy();
 
-    // Build command: streamtui cast-magnet <magnet> -d <device> [--subtitle-file <path>] -q
-    let mut args = format!(
-        "nohup '{}' cast-magnet '{}' -d '{}' -q",
-        exe_path.replace('\'', "'\\''"),
-        magnet.replace('\'', "'\\''"),
-        device.replace('\'', "'\\''")
-    );
+    // Build command: streamtui cast-magnet <magnet> [-d <device> | --vlc] [--subtitle-file <path>] -q
+    let is_vlc = device == "VLC (Local)";
+    let mut args = if is_vlc {
+        format!(
+            "nohup '{}' cast-magnet '{}' --vlc -q",
+            exe_path.replace('\'', "'\\''"),
+            magnet.replace('\'', "'\\''")
+        )
+    } else {
+        format!(
+            "nohup '{}' cast-magnet '{}' -d '{}' -q",
+            exe_path.replace('\'', "'\\''"),
+            magnet.replace('\'', "'\\''"),
+            device.replace('\'', "'\\''")
+        )
+    };
 
     if let Some(ref sub_path) = subtitle_path {
         args.push_str(&format!(" --subtitle-file '{}'", sub_path.replace('\'', "'\\''")));
@@ -1713,7 +1722,13 @@ async fn start_playback(
 
     std::mem::forget(child);
 
-    let msg = if subtitle_path.is_some() {
+    let msg = if is_vlc {
+        if subtitle_path.is_some() {
+            "Playing in VLC (with subtitles)".to_string()
+        } else {
+            "Playing in VLC".to_string()
+        }
+    } else if subtitle_path.is_some() {
         format!("Casting to {} (with subtitles)", device)
     } else {
         format!("Casting to {}", device)
@@ -1784,14 +1799,24 @@ async fn restart_with_subtitles(
     let exe = std::env::current_exe()?;
     let exe_path = exe.to_string_lossy();
 
-    // Build command: streamtui cast-magnet <magnet> -d <device> --subtitle-file <path> --start <pos> -q
-    let mut args = format!(
-        "nohup '{}' cast-magnet '{}' -d '{}' --subtitle-file '{}' -q",
-        exe_path.replace('\'', "'\\''"),
-        magnet.replace('\'', "'\\''"),
-        device.replace('\'', "'\\''"),
-        subtitle_path.replace('\'', "'\\''")
-    );
+    // Build command: streamtui cast-magnet <magnet> [-d <device> | --vlc] --subtitle-file <path> --start <pos> -q
+    let is_vlc = device == "VLC (Local)";
+    let mut args = if is_vlc {
+        format!(
+            "nohup '{}' cast-magnet '{}' --vlc --subtitle-file '{}' -q",
+            exe_path.replace('\'', "'\\''"),
+            magnet.replace('\'', "'\\''"),
+            subtitle_path.replace('\'', "'\\''")
+        )
+    } else {
+        format!(
+            "nohup '{}' cast-magnet '{}' -d '{}' --subtitle-file '{}' -q",
+            exe_path.replace('\'', "'\\''"),
+            magnet.replace('\'', "'\\''"),
+            device.replace('\'', "'\\''"),
+            subtitle_path.replace('\'', "'\\''")
+        )
+    };
 
     if seek_seconds > 0 {
         args.push_str(&format!(" --start {}", seek_seconds));
@@ -1814,6 +1839,11 @@ async fn restart_with_subtitles(
 
 /// Send playback control command using our own CLI
 async fn playback_control(action: &str, device: &str) -> anyhow::Result<()> {
+    // VLC controls from TUI not supported - users control VLC directly
+    if device == "VLC (Local)" {
+        return Ok(());
+    }
+
     let exe = std::env::current_exe()?;
 
     // Map action to our CLI command

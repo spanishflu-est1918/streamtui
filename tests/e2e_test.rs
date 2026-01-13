@@ -1090,20 +1090,24 @@ fn test_devices_loaded_message_updates_state() {
 
     app.handle_message(AppMessage::DevicesLoaded(devices.clone()));
 
-    assert_eq!(app.cast_devices.len(), 2);
-    assert_eq!(app.cast_devices[0].name, "Living Room TV");
-    assert_eq!(app.selected_device, Some(0)); // Auto-selects first device
+    // VLC (Local) is injected as first device, then discovered devices
+    assert_eq!(app.cast_devices.len(), 3);
+    assert_eq!(app.cast_devices[0].name, "VLC (Local)");
+    assert_eq!(app.cast_devices[1].name, "Living Room TV");
+    assert_eq!(app.selected_device, Some(0)); // Auto-selects first device (VLC)
 }
 
 #[test]
-fn test_devices_loaded_empty_does_not_select() {
+fn test_devices_loaded_empty_still_has_vlc() {
     use streamtui::app::AppMessage;
 
     let mut app = App::new();
     app.handle_message(AppMessage::DevicesLoaded(vec![]));
 
-    assert!(app.cast_devices.is_empty());
-    assert!(app.selected_device.is_none());
+    // VLC (Local) is always available even with no Chromecasts discovered
+    assert_eq!(app.cast_devices.len(), 1);
+    assert_eq!(app.cast_devices[0].name, "VLC (Local)");
+    assert_eq!(app.selected_device, Some(0)); // Auto-selects VLC
 }
 
 #[test]
