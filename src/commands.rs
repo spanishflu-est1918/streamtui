@@ -12,33 +12,17 @@ use crate::cli::{
     SeekPosition, StatusCmd, StopCmd, StreamsCmd, SubtitlesCmd, TrendingCmd, TrendingWindow,
     VolumeCmd, VolumeLevel,
 };
+use crate::config::Config;
 use crate::models::{CastDevice, MediaType, Quality, StreamSource};
 use crate::stream::{LocalPlayer, PlayerType, SubtitleClient};
-
-// =============================================================================
-// Config
-// =============================================================================
-
-/// Get TMDB API key from environment
-fn get_tmdb_api_key() -> Option<String> {
-    std::env::var("TMDB_API_KEY").ok()
-}
 
 // =============================================================================
 // Search Command
 // =============================================================================
 
 pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
-    let api_key = match get_tmdb_api_key() {
-        Some(key) => key,
-        None => {
-            return output.error(
-                "TMDB_API_KEY not set. Export it or add to config.",
-                ExitCode::Error,
-            )
-        }
-    };
-
+    let mut config = Config::load();
+    let api_key = config.get_tmdb_api_key();
     let client = TmdbClient::new(api_key);
 
     output.info(format!("Searching for: {}", cmd.query));
@@ -78,16 +62,8 @@ pub async fn search_cmd(cmd: SearchCmd, output: &Output) -> ExitCode {
 // =============================================================================
 
 pub async fn trending_cmd(cmd: TrendingCmd, output: &Output) -> ExitCode {
-    let api_key = match get_tmdb_api_key() {
-        Some(key) => key,
-        None => {
-            return output.error(
-                "TMDB_API_KEY not set. Export it or add to config.",
-                ExitCode::Error,
-            )
-        }
-    };
-
+    let mut config = Config::load();
+    let api_key = config.get_tmdb_api_key();
     let client = TmdbClient::new(api_key);
 
     let window_str = match cmd.window {
@@ -126,16 +102,8 @@ pub async fn trending_cmd(cmd: TrendingCmd, output: &Output) -> ExitCode {
 // =============================================================================
 
 pub async fn info_cmd(cmd: InfoCmd, output: &Output) -> ExitCode {
-    let api_key = match get_tmdb_api_key() {
-        Some(key) => key,
-        None => {
-            return output.error(
-                "TMDB_API_KEY not set. Export it or add to config.",
-                ExitCode::Error,
-            )
-        }
-    };
-
+    let mut config = Config::load();
+    let api_key = config.get_tmdb_api_key();
     let client = TmdbClient::new(api_key);
 
     output.info(format!("Getting info for: {}", cmd.id));

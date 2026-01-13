@@ -240,6 +240,7 @@ async fn test_trending_returns_results() {
 
     let mock = server
         .mock("GET", "/trending/all/week")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(mock_response)
@@ -471,6 +472,7 @@ async fn test_tv_season_gets_episodes() {
 
     let mock = server
         .mock("GET", "/tv/1396/season/1")
+        .match_query(Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(mock_response)
@@ -563,6 +565,7 @@ async fn test_handles_server_error() {
 
     let mock = server
         .mock("GET", "/trending/all/week")
+        .match_query(Matcher::Any)
         .with_status(500)
         .with_body("Internal Server Error")
         .create_async()
@@ -605,17 +608,45 @@ async fn test_handles_invalid_json() {
 async fn test_sends_bearer_token() {
     let mut server = Server::new_async().await;
 
+    // Use a long token (64+ chars) to trigger Bearer auth instead of query param auth
+    let long_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IlRlc3QifQ";
+
     let mock = server
         .mock("GET", "/search/multi")
         .match_query(Matcher::Any)
-        .match_header("Authorization", "Bearer my_secret_token")
+        .match_header("Authorization", format!("Bearer {}", long_token).as_str())
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"{"page": 1, "results": [], "total_results": 0, "total_pages": 0}"#)
         .create_async()
         .await;
 
-    let client = TmdbClient::with_base_url("my_secret_token", server.url());
+    let client = TmdbClient::with_base_url(long_token, server.url());
+    let _ = client.search("test").await;
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_sends_legacy_api_key() {
+    let mut server = Server::new_async().await;
+
+    // Short keys (< 64 chars) are sent as query params, not Bearer tokens
+    let short_key = "abc123def456";
+
+    let mock = server
+        .mock("GET", "/search/multi")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("api_key".into(), short_key.into()),
+            Matcher::UrlEncoded("query".into(), "test".into()),
+        ]))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"page": 1, "results": [], "total_results": 0, "total_pages": 0}"#)
+        .create_async()
+        .await;
+
+    let client = TmdbClient::with_base_url(short_key, server.url());
     let _ = client.search("test").await;
 
     mock.assert_async().await;

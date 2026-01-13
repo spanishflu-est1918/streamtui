@@ -67,17 +67,26 @@ impl TmdbClient {
 
     /// Make an authenticated GET request with retry logic for rate limits
     async fn get<T: for<'de> Deserialize<'de>>(&self, endpoint: &str) -> Result<T> {
-        let url = format!("{}{}", self.base_url, endpoint);
+        // Support both legacy API key (query param) and Bearer token (header)
+        // Legacy keys are ~32 chars, Bearer tokens are much longer (~200 chars)
+        let url = if self.api_key.len() < 64 {
+            // Legacy API key - append as query parameter
+            let separator = if endpoint.contains('?') { "&" } else { "?" };
+            format!("{}{}{}api_key={}", self.base_url, endpoint, separator, self.api_key)
+        } else {
+            format!("{}{}", self.base_url, endpoint)
+        };
         let mut retries = 0;
 
         loop {
-            let response = self
-                .client
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", self.api_key))
-                .header("Accept", "application/json")
-                .send()
-                .await?;
+            let mut request = self.client.get(&url).header("Accept", "application/json");
+
+            // Only add Bearer auth for longer tokens
+            if self.api_key.len() >= 64 {
+                request = request.header("Authorization", format!("Bearer {}", self.api_key));
+            }
+
+            let response = request.send().await?;
 
             match response.status() {
                 StatusCode::OK => {
