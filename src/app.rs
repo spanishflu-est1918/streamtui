@@ -37,6 +37,7 @@ pub enum AppCommand {
         title: String,
         device: String,
         subtitle_url: Option<String>,
+        file_idx: Option<u32>,
     },
     /// Stop playback
     StopPlayback,
@@ -47,6 +48,7 @@ pub enum AppCommand {
         device: String,
         subtitle_url: String,
         seek_seconds: u32,
+        file_idx: Option<u32>,
     },
     /// Playback control (pause, volume, seek)
     PlaybackControl {
@@ -634,8 +636,15 @@ impl App {
             subtitles: SubtitlesState::default(),
             playing: PlayingState::default(),
 
-            cast_devices: Vec::new(),
-            selected_device: None,
+            // Initialize with VLC as default device (always available)
+            cast_devices: vec![CastDevice {
+                id: "vlc-local".to_string(),
+                name: "VLC (Local)".to_string(),
+                address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                port: 0,
+                model: Some("Local Playback".to_string()),
+            }],
+            selected_device: Some(0), // VLC selected by default
             show_device_modal: false,
             device_modal_index: 0,
 
@@ -668,8 +677,15 @@ impl App {
             subtitles: SubtitlesState::default(),
             playing: PlayingState::default(),
 
-            cast_devices: Vec::new(),
-            selected_device: None,
+            // Initialize with VLC as default device (always available)
+            cast_devices: vec![CastDevice {
+                id: "vlc-local".to_string(),
+                name: "VLC (Local)".to_string(),
+                address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                port: 0,
+                model: Some("Local Playback".to_string()),
+            }],
+            selected_device: Some(0), // VLC selected by default
             show_device_modal: false,
             device_modal_index: 0,
 
@@ -822,12 +838,16 @@ impl App {
             .map(|p| p.position.as_secs() as u32)
             .unwrap_or(0);
 
+        // Get file_idx from torrent session
+        let file_idx = self.playing.torrent.as_ref().and_then(|t| t.file_idx);
+
         self.send_command(AppCommand::RestartWithSubtitles {
             magnet,
             title: self.playing.title.clone(),
             device: device.name,
             subtitle_url,
             seek_seconds,
+            file_idx,
         });
     }
 
@@ -1372,6 +1392,7 @@ impl App {
             title: self.sources.title.clone(),
             device: device.name.clone(),
             subtitle_url,
+            file_idx: source.file_idx,
         });
 
         // Navigate to Playing state

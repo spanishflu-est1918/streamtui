@@ -279,9 +279,9 @@ async fn handle_async_commands(
                         Err(e) => AppMessage::Error(format!("Device discovery failed: {}", e)),
                     }
                 }
-                AppCommand::StartPlayback { magnet, title, device, subtitle_url } => {
+                AppCommand::StartPlayback { magnet, title, device, subtitle_url, file_idx } => {
                     // Start webtorrent + cast flow
-                    match start_playback(&magnet, &title, &device, subtitle_url.as_deref()).await {
+                    match start_playback(&magnet, &title, &device, subtitle_url.as_deref(), file_idx).await {
                         Ok(stream_url) => AppMessage::PlaybackStarted { stream_url },
                         Err(e) => AppMessage::Error(format!("Playback failed: {}", e)),
                     }
@@ -291,9 +291,9 @@ async fn handle_async_commands(
                     let _ = stop_playback().await;
                     AppMessage::PlaybackStopped
                 }
-                AppCommand::RestartWithSubtitles { magnet, title, device, subtitle_url, seek_seconds } => {
+                AppCommand::RestartWithSubtitles { magnet, title, device, subtitle_url, seek_seconds, file_idx } => {
                     // Restart playback with subtitles at saved position
-                    match restart_with_subtitles(&magnet, &title, &device, &subtitle_url, seek_seconds).await {
+                    match restart_with_subtitles(&magnet, &title, &device, &subtitle_url, seek_seconds, file_idx).await {
                         Ok(msg) => AppMessage::PlaybackStarted { stream_url: msg },
                         Err(e) => AppMessage::Error(format!("Restart failed: {}", e)),
                     }
@@ -1165,7 +1165,7 @@ fn render_subtitles(frame: &mut Frame, area: Rect, app: &App) {
                     },
                 ),
                 Span::styled(
-                    &sub.language,
+                    &sub.language_name,
                     if is_selected {
                         Theme::highlighted()
                     } else {
@@ -1680,6 +1680,7 @@ async fn start_playback(
     _title: &str,
     device: &str,
     subtitle_url: Option<&str>,
+    file_idx: Option<u32>,
 ) -> anyhow::Result<String> {
     // Download subtitle file if URL provided
     let subtitle_path = if let Some(url) = subtitle_url {
@@ -1714,7 +1715,22 @@ async fn start_playback(
         args.push_str(&format!(" --subtitle-file '{}'", sub_path.replace('\'', "'\\''")));
     }
 
-    args.push_str(" </dev/null >/dev/null 2>&1 &");
+    // Add file index if specified (to select correct file in multi-file torrents)
+    if let Some(idx) = file_idx {
+        args.push_str(&format!(" -i {}", idx));
+    }
+
+    // Use a log file instead of /dev/null - webtorrent/VLC need somewhere to output
+    let log_path = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("streamtui")
+        .join("playback.log");
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let log_path_str = log_path.to_string_lossy();
+
+    args.push_str(&format!(" </dev/null >>'{}' 2>&1 &", log_path_str));
 
     let child = std::process::Command::new("sh")
         .arg("-c")
@@ -1790,6 +1806,7 @@ async fn restart_with_subtitles(
     device: &str,
     subtitle_url: &str,
     seek_seconds: u32,
+    file_idx: Option<u32>,
 ) -> anyhow::Result<String> {
     // 1. Stop current playback
     stop_playback().await?;
@@ -1827,7 +1844,22 @@ async fn restart_with_subtitles(
         args.push_str(&format!(" --start {}", seek_seconds));
     }
 
-    args.push_str(" </dev/null >/dev/null 2>&1 &");
+    // Add file index if specified
+    if let Some(idx) = file_idx {
+        args.push_str(&format!(" -i {}", idx));
+    }
+
+    // Use a log file instead of /dev/null - webtorrent/VLC need somewhere to output
+    let log_path = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("streamtui")
+        .join("playback.log");
+    if let Some(parent) = log_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let log_path_str = log_path.to_string_lossy();
+
+    args.push_str(&format!(" </dev/null >>'{}' 2>&1 &", log_path_str));
 
     let child = std::process::Command::new("sh")
         .arg("-c")

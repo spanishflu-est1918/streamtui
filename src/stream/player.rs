@@ -179,7 +179,9 @@ mod tests {
 
     #[test]
     fn test_player_type_command() {
-        assert_eq!(PlayerType::Vlc.command(), "vlc");
+        // On macOS with VLC installed, returns full path; otherwise "vlc"
+        let vlc_cmd = PlayerType::Vlc.command();
+        assert!(vlc_cmd == "vlc" || vlc_cmd == "/Applications/VLC.app/Contents/MacOS/VLC");
         assert_eq!(PlayerType::Mpv.command(), "mpv");
     }
 

@@ -625,9 +625,8 @@ pub async fn cast_magnet_cmd(
                     ExitCode::InvalidArgs,
                 );
             }
-            // VLC subtitle args passed through webtorrent
-            wt_args.push("--player-args".to_string());
-            wt_args.push(format!("--sub-file={}", sub_file.display()));
+            // VLC subtitle args passed through webtorrent (must be single arg with =)
+            wt_args.push(format!("--player-args=--sub-file={}", sub_file.display()));
         }
 
         // Start webtorrent with --vlc (it handles opening VLC when ready)

@@ -133,18 +133,22 @@ impl SubtitleClient {
                         || lang.starts_with(&s.lang)
                 })
             })
-            .map(|s| SubtitleResult {
-                id: s.id.clone(),
-                url: s.url,
-                language: s.lang.clone(),
-                language_name: lang_code_to_name(&s.lang),
-                release: "Stremio".to_string(),
-                fps: None,
-                format: SubFormat::Srt,
-                downloads: 0,
-                from_trusted: true,
-                hearing_impaired: false,
-                ai_translated: false,
+            .map(|s| {
+                // Extract release name from subtitle ID (format: "id|release_name" or just use ID)
+                let release = extract_release_from_id(&s.id);
+                SubtitleResult {
+                    id: s.id.clone(),
+                    url: s.url,
+                    language: s.lang.clone(),
+                    language_name: lang_code_to_name(&s.lang),
+                    release,
+                    fps: None,
+                    format: SubFormat::Srt,
+                    downloads: 0, // Stremio API doesn't provide download counts
+                    from_trusted: true,
+                    hearing_impaired: false,
+                    ai_translated: false,
+                }
             })
             .collect();
 
@@ -228,6 +232,33 @@ fn normalize_imdb_id(imdb_id: &str) -> String {
     } else {
         format!("tt{}", imdb_id)
     }
+}
+
+/// Extract release name from Stremio subtitle ID
+/// Stremio IDs can be: "12345678" (numeric) or contain embedded release info
+fn extract_release_from_id(id: &str) -> String {
+    // Check for pipe-separated format: "id|release_name"
+    if let Some(idx) = id.find('|') {
+        let release = &id[idx + 1..];
+        if !release.is_empty() {
+            // Clean up the release name (replace dots with spaces, truncate)
+            return release
+                .replace('.', " ")
+                .trim()
+                .chars()
+                .take(50)
+                .collect();
+        }
+    }
+
+    // If ID looks like a release name (contains dots or dashes), use it
+    if id.contains('.') || (id.contains('-') && !id.chars().all(|c| c.is_ascii_digit() || c == '-'))
+    {
+        return id.replace('.', " ").trim().chars().take(50).collect();
+    }
+
+    // Fallback to "OpenSubtitles" for pure numeric IDs
+    "OpenSubtitles".to_string()
 }
 
 /// Convert 3-letter language code to full name
