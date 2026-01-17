@@ -1067,8 +1067,10 @@ fn test_devices_loaded_message_updates_state() {
     use streamtui::app::AppMessage;
 
     let mut app = App::new();
-    assert!(app.cast_devices.is_empty());
-    assert!(app.selected_device.is_none());
+    // VLC is initialized as default device
+    assert_eq!(app.cast_devices.len(), 1);
+    assert_eq!(app.cast_devices[0].name, "VLC (Local)");
+    assert_eq!(app.selected_device, Some(0));
 
     // Simulate receiving devices from discovery
     let devices = vec![
@@ -1221,10 +1223,16 @@ async fn test_enter_in_sources_sends_start_playback_command() {
 }
 
 #[tokio::test]
-async fn test_enter_in_sources_without_device_shows_error() {
-    let (mut app, _cmd_rx) = App::with_channels();
+async fn test_enter_in_sources_with_vlc_default_starts_playback() {
+    use streamtui::app::AppCommand;
 
-    // Set up: Sources with source but NO device
+    let (mut app, mut cmd_rx) = App::with_channels();
+
+    // VLC is now default device
+    assert_eq!(app.selected_device, Some(0));
+    assert_eq!(app.cast_devices[0].name, "VLC (Local)");
+
+    // Set up: Sources with source, VLC already selected
     app.state = AppState::Sources;
     app.sources.set_sources(vec![StreamSource {
         name: "Torrentio\n1080p".to_string(),
@@ -1235,16 +1243,21 @@ async fn test_enter_in_sources_without_device_shows_error() {
         quality: Quality::FHD1080p,
         size_bytes: None,
     }]);
-    // No device set
-    assert!(app.selected_device.is_none());
 
     // Press Enter
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
 
-    // Should show error, NOT navigate to Playing
-    assert!(app.error.is_some());
-    assert!(app.error.as_ref().unwrap().contains("device"));
-    assert_eq!(app.state, AppState::Sources); // Still in Sources
+    // Should navigate to Playing and send StartPlayback command
+    assert_eq!(app.state, AppState::Playing);
+
+    // Verify command was sent
+    let cmd = cmd_rx.try_recv().expect("Should receive command");
+    match cmd {
+        AppCommand::StartPlayback { device, .. } => {
+            assert_eq!(device, "VLC (Local)");
+        }
+        other => panic!("Expected StartPlayback, got {:?}", other),
+    }
 }
 
 #[tokio::test]

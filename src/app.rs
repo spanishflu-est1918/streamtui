@@ -85,6 +85,15 @@ pub enum AppMessage {
     PlaybackStarted { stream_url: String },
     /// Playback stopped
     PlaybackStopped,
+    /// Torrent state updated (from log monitoring)
+    TorrentStateUpdate(TorrentState),
+    /// Torrent stats updated (speed, peers, progress)
+    TorrentStatsUpdate {
+        download_speed: u64,
+        peers: u32,
+        downloaded: u64,
+        total: u64,
+    },
     /// Error occurred
     Error(String),
 }
@@ -771,15 +780,32 @@ impl App {
                 }
             }
             AppMessage::PlaybackStarted { stream_url } => {
-                // Update torrent session with stream URL
+                // Update torrent session with stream URL (state comes from log monitor)
                 if let Some(ref mut session) = self.playing.torrent {
                     session.stream_url = Some(stream_url);
-                    session.state = TorrentState::Streaming;
                 }
             }
             AppMessage::PlaybackStopped => {
                 self.playing = PlayingState::default();
                 self.back();
+            }
+            AppMessage::TorrentStateUpdate(state) => {
+                // Update torrent state for UI display
+                if let Some(ref mut session) = self.playing.torrent {
+                    session.state = state;
+                }
+            }
+            AppMessage::TorrentStatsUpdate { download_speed, peers, downloaded, total } => {
+                // Update torrent stats for UI display
+                if let Some(ref mut session) = self.playing.torrent {
+                    session.download_speed = download_speed;
+                    session.peers = peers;
+                    session.downloaded = downloaded;
+                    session.total_size = total;
+                    if total > 0 {
+                        session.progress = (downloaded as f32 / total as f32) * 100.0;
+                    }
+                }
             }
             AppMessage::Error(msg) => {
                 self.set_error(msg);

@@ -392,6 +392,8 @@ pub struct TorrentSession {
     pub progress: f32,
     pub download_speed: u64,
     pub downloaded: u64,
+    pub total_size: u64,
+    pub peers: u32,
 }
 
 impl TorrentSession {
@@ -406,6 +408,8 @@ impl TorrentSession {
             progress: 0.0,
             download_speed: 0,
             downloaded: 0,
+            total_size: 0,
+            peers: 0,
         }
     }
 

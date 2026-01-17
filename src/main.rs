@@ -280,9 +280,18 @@ async fn handle_async_commands(
                     }
                 }
                 AppCommand::StartPlayback { magnet, title, device, subtitle_url, file_idx } => {
+                    // Clear old log file so monitor starts fresh
+                    let log_path = get_playback_log_path();
+                    let _ = std::fs::remove_file(&log_path);
+
                     // Start webtorrent + cast flow
                     match start_playback(&magnet, &title, &device, subtitle_url.as_deref(), file_idx).await {
-                        Ok(stream_url) => AppMessage::PlaybackStarted { stream_url },
+                        Ok(stream_url) => {
+                            // Spawn log monitor to update TUI with torrent progress
+                            let monitor_tx = msg_tx.clone();
+                            tokio::spawn(monitor_playback_log(monitor_tx));
+                            AppMessage::PlaybackStarted { stream_url }
+                        }
                         Err(e) => AppMessage::Error(format!("Playback failed: {}", e)),
                     }
                 }
@@ -292,9 +301,18 @@ async fn handle_async_commands(
                     AppMessage::PlaybackStopped
                 }
                 AppCommand::RestartWithSubtitles { magnet, title, device, subtitle_url, seek_seconds, file_idx } => {
+                    // Clear old log file so monitor starts fresh
+                    let log_path = get_playback_log_path();
+                    let _ = std::fs::remove_file(&log_path);
+
                     // Restart playback with subtitles at saved position
                     match restart_with_subtitles(&magnet, &title, &device, &subtitle_url, seek_seconds, file_idx).await {
-                        Ok(msg) => AppMessage::PlaybackStarted { stream_url: msg },
+                        Ok(msg_str) => {
+                            // Spawn log monitor to update TUI with torrent progress
+                            let monitor_tx = msg_tx.clone();
+                            tokio::spawn(monitor_playback_log(monitor_tx));
+                            AppMessage::PlaybackStarted { stream_url: msg_str }
+                        }
                         Err(e) => AppMessage::Error(format!("Restart failed: {}", e)),
                     }
                 }
@@ -1324,50 +1342,72 @@ fn render_playing(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(format!(" {:.0}%", status.volume * 100.0), Theme::dimmed()),
         ]));
     } else if let Some(ref torrent) = app.playing.torrent {
-        // Connecting/buffering state
+        // Torrent streaming state - show comprehensive stats
+        let is_streaming = matches!(torrent.state, TorrentState::Streaming);
+
+        // State indicator
+        let state_icon = if is_streaming { "▶" } else { spinner };
         let state_text = torrent.state.to_string();
 
-        // Visual streaming animation
-        let anim_frame = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            / 100) % 20;
-
-        let wave: String = (0..20)
-            .map(|i| {
-                let dist = ((i as i64 - anim_frame as i64).abs() % 20) as usize;
-                if dist < 3 { '█' } else if dist < 5 { '▓' } else if dist < 7 { '▒' } else { '░' }
-            })
-            .collect();
-
-        lines.push(Line::from(Span::styled(wave, Theme::accent())));
-        lines.push(Line::from(""));
-
-        // Status with spinner
         lines.push(Line::from(vec![
-            Span::styled(format!("{} ", spinner), Theme::accent()),
-            Span::styled(state_text, Theme::loading()),
+            Span::styled(format!("{} ", state_icon), if is_streaming { Theme::success() } else { Theme::accent() }),
+            Span::styled(state_text.clone(), if is_streaming { Theme::success() } else { Theme::loading() }),
         ]));
 
-        // Hint for 0 peers
-        if torrent.state.peers() == Some(0) {
+        // Download progress bar (if we have total size info)
+        if torrent.total_size > 0 {
+            lines.push(Line::from(""));
+            let bar_width = (card_inner.width as usize).saturating_sub(12).min(35);
+            let progress_pct = (torrent.downloaded as f64 / torrent.total_size as f64 * 100.0).min(100.0);
+            let filled = (progress_pct / 100.0 * bar_width as f64) as usize;
+            let empty = bar_width.saturating_sub(filled);
+
+            lines.push(Line::from(vec![
+                Span::styled("▓".repeat(filled), Theme::success()),
+                Span::styled("░".repeat(empty), Theme::dimmed()),
+                Span::styled(format!(" {:.1}%", progress_pct), Theme::text()),
+            ]));
+
+            // Downloaded / Total
+            let downloaded_str = format_bytes(torrent.downloaded);
+            let total_str = format_bytes(torrent.total_size);
             lines.push(Line::from(Span::styled(
-                "Searching DHT for peers...",
+                format!("{} / {}", downloaded_str, total_str),
                 Theme::dimmed(),
             )));
         }
 
-        // Buffering progress
-        if let TorrentState::Buffering { progress, .. } = torrent.state {
-            lines.push(Line::from(""));
-            let bar_width = 30;
-            let filled = (progress as usize * bar_width) / 100;
-            lines.push(Line::from(vec![
-                Span::styled("▓".repeat(filled), Theme::success()),
-                Span::styled("░".repeat(bar_width - filled), Theme::dimmed()),
-                Span::styled(format!(" {}%", progress), Theme::text()),
-            ]));
+        lines.push(Line::from(""));
+
+        // Stats row: Speed | Peers
+        let speed_str = if torrent.download_speed > 0 {
+            format!("↓ {}/s", format_bytes(torrent.download_speed))
+        } else {
+            "↓ --".to_string()
+        };
+        let peers_str = if torrent.peers > 0 {
+            format!("👥 {} peers", torrent.peers)
+        } else if let Some(p) = torrent.state.peers() {
+            format!("👥 {} peers", p)
+        } else {
+            "👥 --".to_string()
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(speed_str, Theme::accent()),
+            Span::styled("  │  ", Theme::dimmed()),
+            Span::styled(peers_str, Theme::text()),
+        ]));
+
+        // Hint when connecting
+        if !is_streaming {
+            if torrent.state.peers() == Some(0) && torrent.peers == 0 {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Searching DHT for peers...",
+                    Theme::dimmed(),
+                )));
+            }
         }
     } else {
         // Fallback - initializing
@@ -1905,4 +1945,304 @@ async fn playback_control(action: &str, device: &str) -> anyhow::Result<()> {
     command.output().await?;
 
     Ok(())
+}
+
+/// Parse webtorrent output line to extract torrent state
+///
+/// Webtorrent CLI outputs lines like:
+/// - "fetching torrent metadata from 3 peers"
+/// - "Streaming to: vlc  Server running at: http://..."
+/// - "Speed: 158 KB/s Downloaded: 161 MB/8.7 GB ... Peers: 7/12"
+fn parse_webtorrent_output(line: &str) -> Option<TorrentState> {
+    let line = line.trim();
+
+    // "fetching torrent metadata from X peers"
+    if let Some(rest) = line.strip_prefix("fetching torrent metadata from ") {
+        if let Some(peers_str) = rest.strip_suffix(" peers") {
+            if let Ok(peers) = peers_str.parse::<u32>() {
+                return Some(TorrentState::FetchingMetadata { peers });
+            }
+        }
+    }
+
+    // "Server running at:" anywhere in line means stream is ready
+    if line.contains("Server running at:") {
+        return Some(TorrentState::Streaming);
+    }
+
+    // "verifying existing torrent data..."
+    if line.contains("verifying") {
+        return Some(TorrentState::Connecting { peers: 0 });
+    }
+
+    // Status line with download progress: "Speed: X Downloaded: Y/Z Uploaded: W"
+    // Example: "Speed: 158 KB/s Downloaded: 161 MB/8.7 GB Uploaded: 7.0 KB"
+    if line.contains("Downloaded:") {
+        if let Some(progress) = extract_download_progress(line) {
+            // Progress < 100 means still buffering
+            if progress < 100 {
+                return Some(TorrentState::Buffering { peers: 0, progress });
+            }
+        }
+    }
+
+    // "Running time: ... Peers: X/Y" means actively streaming
+    if line.contains("Peers:") && line.contains("Running time:") {
+        return Some(TorrentState::Streaming);
+    }
+
+    // Standalone "Peers: X/Y" during connection
+    if line.contains("Peers:") && !line.contains("Running time:") {
+        let peers = extract_peers_from_line(line);
+        if peers > 0 {
+            return Some(TorrentState::Connecting { peers });
+        }
+    }
+
+    None
+}
+
+/// Extract peer count from a line containing "Peers: X" or "Peers: X/Y"
+fn extract_peers_from_line(line: &str) -> u32 {
+    if let Some(pos) = line.find("Peers:") {
+        let after = &line[pos + 6..].trim_start();
+        let peers_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(peers) = peers_str.parse::<u32>() {
+            return peers;
+        }
+    }
+    0
+}
+
+/// Extract download progress from "Downloaded: 161 MB/8.7 GB" format
+/// Returns percentage (0-100)
+fn extract_download_progress(line: &str) -> Option<u8> {
+    let pos = line.find("Downloaded:")?;
+    let after = &line[pos + 11..].trim_start();
+
+    // Parse "161 MB/8.7 GB" format
+    // Find the "/" separator
+    let slash_pos = after.find('/')?;
+    let downloaded_part = &after[..slash_pos].trim();
+    let total_part = &after[slash_pos + 1..];
+
+    // Parse downloaded amount (e.g., "161 MB")
+    let downloaded_bytes = parse_size_to_bytes(downloaded_part)?;
+
+    // Parse total amount - need to find where it ends (before next field)
+    let total_end = total_part.find(|c: char| c.is_alphabetic() && c != 'B' && c != 'K' && c != 'M' && c != 'G' && c != 'T')
+        .unwrap_or(total_part.len());
+    let total_str = &total_part[..total_end].trim();
+    let total_bytes = parse_size_to_bytes(total_str)?;
+
+    if total_bytes == 0 {
+        return None;
+    }
+
+    let progress = ((downloaded_bytes as f64 / total_bytes as f64) * 100.0) as u8;
+    Some(progress.min(100))
+}
+
+/// Parse size string like "161 MB" or "8.7 GB" to bytes
+fn parse_size_to_bytes(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len());
+    let (num_str, unit) = s.split_at(num_end);
+    let num: f64 = num_str.trim().parse().ok()?;
+    let unit = unit.trim().to_uppercase();
+
+    let multiplier: u64 = match unit.as_str() {
+        "B" => 1,
+        "KB" => 1024,
+        "MB" => 1024 * 1024,
+        "GB" => 1024 * 1024 * 1024,
+        "TB" => 1024 * 1024 * 1024 * 1024,
+        _ => return None,
+    };
+
+    Some((num * multiplier as f64) as u64)
+}
+
+/// Format bytes as human-readable string (KB, MB, GB)
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.0} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Parsed torrent stats from webtorrent output
+#[derive(Debug, Clone, Default, PartialEq)]
+struct TorrentStats {
+    download_speed: u64,
+    peers: u32,
+    downloaded: u64,
+    total: u64,
+}
+
+/// Parse webtorrent stats from log lines
+/// Parses lines like:
+/// - "Speed: 158 KB/s Downloaded: 161 MB/8.7 GB Uploaded: 7.0 KB"
+/// - "Running time: 7 seconds  Time remaining: 15 hours  Peers: 7/12"
+fn parse_webtorrent_stats(lines: &[&str]) -> Option<TorrentStats> {
+    let mut stats = TorrentStats::default();
+    let mut found_any = false;
+
+    for line in lines {
+        // Parse speed: "Speed: 158 KB/s"
+        if let Some(pos) = line.find("Speed:") {
+            let after = &line[pos + 6..].trim_start();
+            // Find end of speed value (before next field)
+            let end = after.find(|c: char| c.is_alphabetic() && c != 'K' && c != 'M' && c != 'G' && c != 'B')
+                .map(|p| p + 2) // include unit like "KB"
+                .unwrap_or(after.len());
+            let speed_str = &after[..end.min(after.len())].trim();
+            // Remove "/s" suffix
+            let speed_str = speed_str.trim_end_matches("/s").trim();
+            if let Some(bytes) = parse_size_to_bytes(speed_str) {
+                stats.download_speed = bytes;
+                found_any = true;
+            }
+        }
+
+        // Parse downloaded/total: "Downloaded: 161 MB/8.7 GB"
+        if let Some(pos) = line.find("Downloaded:") {
+            let after = &line[pos + 11..].trim_start();
+            if let Some(slash) = after.find('/') {
+                let downloaded_str = &after[..slash].trim();
+                if let Some(downloaded) = parse_size_to_bytes(downloaded_str) {
+                    stats.downloaded = downloaded;
+                    found_any = true;
+                }
+                // Parse total - find end (before "Uploaded" or end of recognizable size)
+                let total_part = &after[slash + 1..];
+                let end = total_part.find("Uploaded").unwrap_or(total_part.len());
+                let total_str = &total_part[..end].trim();
+                if let Some(total) = parse_size_to_bytes(total_str) {
+                    stats.total = total;
+                }
+            }
+        }
+
+        // Parse peers: "Peers: 7/12"
+        if let Some(pos) = line.find("Peers:") {
+            let after = &line[pos + 6..].trim_start();
+            let peers_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(peers) = peers_str.parse::<u32>() {
+                stats.peers = peers;
+                found_any = true;
+            }
+        }
+    }
+
+    if found_any { Some(stats) } else { None }
+}
+
+/// Get the playback log file path
+fn get_playback_log_path() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("streamtui")
+        .join("playback.log")
+}
+
+/// Monitor playback log file and send state/stats updates
+async fn monitor_playback_log(msg_tx: mpsc::UnboundedSender<AppMessage>) {
+    let log_path = get_playback_log_path();
+
+    // Wait for the log file to appear (playback starts asynchronously)
+    for _ in 0..50 {
+        if log_path.exists() {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+
+    if !log_path.exists() {
+        return;
+    }
+
+    let mut last_state: Option<TorrentState> = None;
+    let mut last_stats: Option<TorrentStats> = None;
+    let mut last_size: u64 = 0;
+    let mut consecutive_failures = 0;
+
+    // Tail the log file - periodically read new content
+    loop {
+        // Check if playback has likely ended (no new content for a while)
+        if consecutive_failures > 100 {
+            break;
+        }
+
+        // Read entire file to get recent lines for stats parsing
+        match std::fs::read_to_string(&log_path) {
+            Ok(content) => {
+                let current_size = content.len() as u64;
+                if current_size > last_size {
+                    // Parse new lines for state changes
+                    let new_content = if last_size > 0 {
+                        content.get(last_size as usize..).unwrap_or("")
+                    } else {
+                        &content
+                    };
+
+                    for line in new_content.lines() {
+                        if let Some(state) = parse_webtorrent_output(line) {
+                            // Don't downgrade from Streaming to earlier states
+                            let dominated = matches!(
+                                (&last_state, &state),
+                                (Some(TorrentState::Streaming), TorrentState::Buffering { .. })
+                                    | (Some(TorrentState::Streaming), TorrentState::Connecting { .. })
+                                    | (Some(TorrentState::Streaming), TorrentState::FetchingMetadata { .. })
+                            );
+
+                            // Only send updates when state changes and not downgrading
+                            if !dominated && last_state.as_ref() != Some(&state) {
+                                last_state = Some(state.clone());
+                                if msg_tx.send(AppMessage::TorrentStateUpdate(state)).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+
+                    // Parse stats from last ~10 lines (webtorrent status spans multiple lines)
+                    let lines: Vec<&str> = content.lines().rev().take(10).collect();
+                    if let Some(stats) = parse_webtorrent_stats(&lines) {
+                        // Only send if stats changed
+                        if last_stats.as_ref() != Some(&stats) {
+                            last_stats = Some(stats.clone());
+                            if msg_tx.send(AppMessage::TorrentStatsUpdate {
+                                download_speed: stats.download_speed,
+                                peers: stats.peers,
+                                downloaded: stats.downloaded,
+                                total: stats.total,
+                            }).is_err() {
+                                return;
+                            }
+                        }
+                    }
+
+                    last_size = current_size;
+                    consecutive_failures = 0;
+                } else {
+                    consecutive_failures += 1;
+                }
+            }
+            Err(_) => {
+                consecutive_failures += 1;
+            }
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    }
 }

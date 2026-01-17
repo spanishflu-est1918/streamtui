@@ -155,6 +155,35 @@ impl SubtitleClient {
         Ok(results)
     }
 
+    /// Download subtitle by ID - searches for the subtitle and downloads it
+    ///
+    /// Returns the path to the cached WebVTT file
+    pub async fn download_by_id(
+        &self,
+        imdb_id: &str,
+        subtitle_id: &str,
+        season: Option<u16>,
+        episode: Option<u16>,
+    ) -> Result<PathBuf> {
+        // Search for subtitles to find the one with matching ID
+        let subtitles = if let (Some(s), Some(e)) = (season, episode) {
+            self.search_episode(imdb_id, s, e, None).await?
+        } else {
+            self.search(imdb_id, None).await?
+        };
+
+        let subtitle = subtitles
+            .into_iter()
+            .find(|s| s.id == subtitle_id)
+            .ok_or_else(|| anyhow!("Subtitle ID {} not found", subtitle_id))?;
+
+        // Download and get the content (caches automatically)
+        self.download(&subtitle).await?;
+
+        // Return the cache path
+        Ok(self.get_cache_path(&subtitle))
+    }
+
     /// Download subtitle from URL and convert to WebVTT
     pub async fn download(&self, subtitle: &SubtitleResult) -> Result<String> {
         // Check cache first

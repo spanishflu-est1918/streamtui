@@ -467,7 +467,11 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         }
     };
 
-    // Step 2: Select stream (by index or quality preference)
+    // Step 2: Sort streams (same as `streams` command to ensure index consistency)
+    // Default sort by seeds to match what user sees in `streams` output
+    streams.sort_by(|a, b| b.seeds.cmp(&a.seeds));
+
+    // Step 3: Select stream (by index or quality preference)
     let stream = if let Some(idx) = cmd.index {
         if idx >= streams.len() {
             return output.error(
@@ -481,7 +485,7 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         }
         streams.remove(idx)
     } else {
-        // Filter and sort by quality preference
+        // Re-sort by quality preference if specified
         if let Some(quality_filter) = cmd.quality {
             let target_quality = match quality_filter {
                 crate::cli::QualityFilter::Q4k => Quality::UHD4K,
@@ -495,21 +499,106 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
                 let b_diff = (b.quality.rank() as i8 - target_quality.rank() as i8).abs();
                 a_diff.cmp(&b_diff).then_with(|| b.seeds.cmp(&a.seeds))
             });
-        } else {
-            // Default: sort by seeds
-            streams.sort_by(|a, b| b.seeds.cmp(&a.seeds));
         }
         streams.remove(0)
     };
 
-    // Step 3: Generate magnet link
+    // Step 4: Generate magnet link
     let magnet = stream.to_magnet(&cmd.imdb_id);
     output.info(format!(
         "Selected: {} ({}) - {} seeds",
         stream.name, stream.quality, stream.seeds
     ));
 
-    // Step 4: Start webtorrent with built-in Chromecast/VLC support
+    // Step 5: Handle subtitles if requested
+    let subtitle_path: Option<std::path::PathBuf> = if cmd.no_subtitle {
+        None
+    } else if let Some(ref sub_file) = cmd.subtitle_file {
+        // Use local subtitle file directly
+        if !sub_file.exists() {
+            output.info(format!(
+                "Warning: Subtitle file not found: {}",
+                sub_file.display()
+            ));
+            None
+        } else {
+            output.info(format!("Using local subtitle: {}", sub_file.display()));
+            Some(sub_file.clone())
+        }
+    } else if let Some(ref sub_id) = cmd.subtitle_id {
+        // Download specific subtitle by ID
+        output.info(format!("Downloading subtitle {}...", sub_id));
+        let sub_client = SubtitleClient::new();
+        match sub_client
+            .download_by_id(
+                &cmd.imdb_id,
+                sub_id,
+                cmd.season.map(|s| s as u16),
+                cmd.episode,
+            )
+            .await
+        {
+            Ok(path) => {
+                output.info(format!("Subtitle downloaded: {}", path.display()));
+                Some(path)
+            }
+            Err(e) => {
+                output.info(format!("Warning: Failed to download subtitle: {}", e));
+                None
+            }
+        }
+    } else if let Some(ref lang) = cmd.subtitle {
+        // Search for subtitle by language and download the best one
+        output.info(format!("Searching for {} subtitles...", lang));
+        let sub_client = SubtitleClient::new();
+        let search_result = if let (Some(season), Some(episode)) = (cmd.season, cmd.episode) {
+            sub_client
+                .search_episode(&cmd.imdb_id, season as u16, episode, Some(lang))
+                .await
+        } else {
+            sub_client.search(&cmd.imdb_id, Some(lang)).await
+        };
+
+        match search_result {
+            Ok(mut subs) if !subs.is_empty() => {
+                // Sort by trust score and take the best one
+                subs.sort_by_key(|s| std::cmp::Reverse(s.trust_score()));
+                let best_sub = &subs[0];
+                output.info(format!(
+                    "Found subtitle: {} ({})",
+                    best_sub.release, best_sub.language_name
+                ));
+
+                match sub_client.download(best_sub).await {
+                    Ok(_) => {
+                        let cache_dir = dirs::cache_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                            .join("streamtui")
+                            .join("subtitles");
+                        let path =
+                            cache_dir.join(format!("{}_{}.vtt", best_sub.language, best_sub.id));
+                        Some(path)
+                    }
+                    Err(e) => {
+                        output.info(format!("Warning: Failed to download subtitle: {}", e));
+                        None
+                    }
+                }
+            }
+            Ok(_) => {
+                output.info(format!("No {} subtitles found", lang));
+                None
+            }
+            Err(e) => {
+                output.info(format!("Warning: Subtitle search failed: {}", e));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Step 6: Start webtorrent with built-in Chromecast/VLC support
     output.info("Starting torrent stream...");
 
     let file_idx = stream.file_idx.unwrap_or(0);
@@ -520,6 +609,12 @@ pub async fn cast_cmd(cmd: CastCmd, device: Option<&str>, output: &Output) -> Ex
         .arg(&magnet)
         .arg("-s")
         .arg(file_idx.to_string());
+
+    // Add subtitle file if we have one
+    if let Some(ref sub_path) = subtitle_path {
+        wt_cmd.arg("-t").arg(sub_path);
+        output.info(format!("Using subtitles: {}", sub_path.display()));
+    }
 
     if cmd.vlc {
         wt_cmd.arg("--vlc");
@@ -666,139 +761,66 @@ pub async fn cast_magnet_cmd(
         }
     }
 
-    output.info(format!("Casting magnet to {}...", device_name.unwrap()));
-
-    // Get local IP for streaming
-    let local_ip = match local_ip_address::local_ip() {
-        Ok(ip) => ip,
-        Err(e) => return output.error(format!("Failed to get local IP: {}", e), ExitCode::Error),
-    };
-
-    let port = 8888u16;
+    let device_name = device_name.unwrap();
     let file_idx = cmd.file_idx.unwrap_or(0);
 
-    // Start webtorrent in background (for Chromecast)
-    let webtorrent = match tokio::process::Command::new("webtorrent")
-        .arg(&cmd.magnet)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--hostname")
-        .arg(local_ip.to_string())
-        .arg("--not-on-top")
-        .arg("--quiet")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                return output.error(
-                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
-                    ExitCode::Error,
-                );
-            }
-            return output.error(
-                format!("Failed to start webtorrent: {}", e),
-                ExitCode::Error,
-            );
-        }
-    };
+    output.info(format!("Casting magnet to {}...", device_name));
 
-    output.info("Starting torrent stream...");
-
-    // Build stream URL
-    let stream_url = format!("http://{}:{}/{}", local_ip, port, file_idx);
-    output.info(format!("Stream URL: {}", stream_url));
-
-    // Wait for stream to be ready (webtorrent needs to connect to peers)
-    if !wait_for_stream(&stream_url, 60, output).await {
-        output.info("Stream not ready yet, continuing anyway...");
-    }
-
-    // Cast to device using catt
-    let device_name = device_name.unwrap(); // Safe: we validated above
-    let mut webtorrent = webtorrent; // Make mutable for potential kill
-
-    // Build catt args
-    let mut catt_args = vec![
-        "-d".to_string(),
+    // Build webtorrent command with --chromecast flag
+    // webtorrent handles HTTP server and casting internally
+    let mut wt_args = vec![
+        cmd.magnet.clone(),
+        "--chromecast".to_string(),
         device_name.to_string(),
-        "cast".to_string(),
-        stream_url.clone(),
+        "--not-on-top".to_string(),
+        "-s".to_string(),
+        file_idx.to_string(),
     ];
 
-    // Handle subtitles
+    // Add subtitle file if provided
     if let Some(sub_file) = &cmd.subtitle_file {
-        // Use local subtitle file
         if !sub_file.exists() {
-            let _ = webtorrent.kill().await;
             return output.error(
                 format!("Subtitle file not found: {}", sub_file.display()),
                 ExitCode::InvalidArgs,
             );
         }
-        catt_args.push("--subtitles".to_string());
-        catt_args.push(sub_file.to_string_lossy().to_string());
+        wt_args.push("-t".to_string());
+        wt_args.push(sub_file.to_string_lossy().to_string());
         output.info(format!("Using subtitle file: {}", sub_file.display()));
-    } else if let Some(sub_lang) = &cmd.subtitle {
-        // Search for subtitles via OpenSubtitles
-        output.info(format!("Searching for {} subtitles...", sub_lang));
-
-        // Try to extract info hash from magnet for subtitle search
-        // For now, note that this would need content identification
-        output.info(format!(
-            "Subtitle search for '{}' - use --subtitle-file for local subs",
-            sub_lang
-        ));
     }
 
-    // Add start position if specified
-    if let Some(start) = cmd.start {
-        catt_args.push("--start".to_string());
-        catt_args.push(start.to_string());
-    }
+    output.info("Starting torrent stream and casting to Chromecast...");
+    output.info("Note: If no audio, the source may use DTS/AC3 codec (not supported by Chromecast). Try --vlc for local playback.");
 
-    output.info(format!("Casting to {}...", device_name));
-
-    match tokio::process::Command::new("catt")
-        .args(&catt_args)
-        .output()
-        .await
+    // Start webtorrent with --chromecast (it handles everything internally)
+    match tokio::process::Command::new("webtorrent")
+        .args(&wt_args)
+        .spawn()
     {
-        Ok(result) => {
-            if result.status.success() {
-                #[derive(Serialize)]
-                struct CastMagnetSuccess {
-                    status: &'static str,
-                    device: String,
-                    stream_url: String,
-                }
-
-                let response = CastMagnetSuccess {
-                    status: "casting",
-                    device: device_name.to_string(),
-                    stream_url,
-                };
-
-                if let Err(e) = output.print(&response) {
-                    let _ = webtorrent.kill().await;
-                    return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
-                }
-
-                // webtorrent continues in background
-                ExitCode::Success
-            } else {
-                let _ = webtorrent.kill().await;
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                output.error(format!("Cast failed: {}", stderr), ExitCode::CastFailed)
+        Ok(_child) => {
+            #[derive(Serialize)]
+            struct CastMagnetSuccess {
+                status: &'static str,
+                device: String,
             }
+
+            let response = CastMagnetSuccess {
+                status: "casting",
+                device: device_name.to_string(),
+            };
+
+            if let Err(e) = output.print(&response) {
+                return output.error(format!("Failed to serialize: {}", e), ExitCode::Error);
+            }
+
+            // webtorrent continues in background
+            ExitCode::Success
         }
         Err(e) => {
-            let _ = webtorrent.kill().await;
             if e.kind() == std::io::ErrorKind::NotFound {
                 output.error(
-                    "catt not found. Install with: pip install catt",
+                    "webtorrent not found. Install with: npm install -g webtorrent-cli",
                     ExitCode::Error,
                 )
             } else {
@@ -853,10 +875,10 @@ pub async fn play_local_cmd(cmd: PlayLocalCmd, output: &Output) -> ExitCode {
         .arg(&cmd.magnet)
         .arg("--port")
         .arg(port.to_string())
-        .arg("--hostname")
-        .arg(local_ip.to_string())
+        .arg("-s")
+        .arg(file_idx.to_string())
         .arg("--not-on-top")
-        .arg("--quiet")
+        .arg("--keep-seeding")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

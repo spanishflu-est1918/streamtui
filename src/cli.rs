@@ -446,6 +446,10 @@ pub struct CastCmd {
     #[arg(long)]
     pub no_subtitle: bool,
 
+    /// Path to a local subtitle file (.srt, .vtt)
+    #[arg(long)]
+    pub subtitle_file: Option<PathBuf>,
+
     /// Start position in seconds
     #[arg(long)]
     pub start: Option<u64>,
